@@ -1,0 +1,24 @@
+COUCOU SOURCE ATTRIBUTION
+Upstream: https://github.com/Louis-CFM/coucou
+Commit: b5f7c0b9bf32a92d0a932e3549c1ecbc19f2946c
+Retrieved: 2026-10-04
+
+Uploaded Coucou.zip: compiled macOS application version 0.1.7, no editable source.
+Orby adaptations use the public source repository at the commit above.
+
+Coucou-Motion.cs: C# port of Spring, Tracked and closeCurve in windows/src/core/anim.ts.
+Original: response=0.5, damping=0.72, 340ms close. Orby v2.3 tunes this to
+response=0.29, damping=0.88, 200ms close; retains substeps and close bezier.
+Native WPF Rendering now drives motion instead of the original 60Hz timer.
+Driver is Orby's WPF adapter; the existing ease-out transitions remain for tab content.
+Desktop-Panel.xaml: palette values and small rounded card/tab treatment from style.css.
+File-Inbox.cs: adapted local copy, collision naming and arrival timestamp logic from
+windows/src-tauri/src/files.rs. Added background copying and a 100 MB limit.
+Orby's shelf does not adopt upstream's automatic seven-day deletion.
+
+Original animation/file sources and MIT license are included under third-party.
+Source-code copyright is Louis Raille (full original spelling in the license).
+No Coucou/Mochi character, artwork, icon or sounds are included. Orby retains its own
+name and reference orb avatar. This build is not endorsed by Coucou's author.
+The Claude hook/approval pipeline, providers and account integrations are not merged;
+Orby keeps its existing local ChatGPT/Codex task connection and desktop modules.

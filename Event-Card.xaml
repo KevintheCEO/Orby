@@ -1,0 +1,13 @@
+<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Name="EventCard" Width="480" Height="112" VerticalAlignment="Top" CornerRadius="18" Padding="16,10" Visibility="Collapsed">
+ <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#151719" Offset="0"/><GradientStop x:Name="EventColor" Color="#234C3F" Offset="0.45"/><GradientStop Color="#151719" Offset="1"/></LinearGradientBrush></Border.Background>
+ <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="58"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+  <Viewbox x:Name="EventOrb" Width="52" Height="54"/>
+  <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
+   <TextBlock x:Name="EventStatus" Text="Task finished" Foreground="#82E5BF" FontSize="11"/>
+   <TextBlock x:Name="EventTitle" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,5,0,0"/>
+   <TextBlock x:Name="EventDetail" Foreground="#AAB5B0" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+   <TextBox x:Name="EventPrompt" Visibility="Collapsed" Height="27" Margin="0,5,0,0" Padding="6,3" Background="#182725" Foreground="White" BorderBrush="#427C69" FontSize="11" AcceptsReturn="True" ToolTip="Type a prompt. Enter sends; Shift+Enter adds a line."/>
+   <StackPanel Orientation="Horizontal" Margin="0,7,0,0"><Button x:Name="EventOpen" Content="Open ChatGPT" Padding="10,3" Background="#E4F6EF" Foreground="#172820" BorderThickness="0" Cursor="Hand"/><Button x:Name="EventDismiss" Content="OK" Padding="10,3" Margin="8,0,0,0" Background="#284037" Foreground="#D3EBDD" BorderThickness="0" Cursor="Hand"/></StackPanel>
+  </StackPanel>
+ </Grid>
+</Border>
