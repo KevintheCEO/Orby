@@ -1,79 +1,93 @@
-# Orby
+﻿<p align="center"><img src="docs/showcase.png" alt="Orby 10.0 beta: five circular Orbys, the music player and desktop features. Actual UI with sample data." width="100%"></p>
 
-Orby is a small Windows desktop companion for ChatGPT. It lives at the top of the screen, reacts to local ChatGPT activity, shows task companions, displays Spotify playback, and provides a compact file-to-new-chat handoff.
+# Orby · Windows desktop companion
 
-![Orby expanded home](Avatar-preview.png)
+A little friend at the top of your screen. Follow AI activity, control your music and enjoy animated companions—all in one compact notch.
 
-![Orby music tab](Music-tab-preview.png)
+**[Download the beta](https://github.com/kevinenas/Orby/releases)** · [See the UI](#a-look-inside) · [Provider compatibility](#ai-connections) · [Validation](VALIDATION.md)
 
-![Multiple task companions](Mini-Orbys-preview.png)
+## Install → open → connect
 
-## Install and connect ChatGPT
+1. Download **Orby-Setup.exe** from Releases and click **Install Orby**.
+2. Click **Open Orby** and choose your AI in the connection picker.
+3. Click **Connect**. Sign in inside that AI's own app if needed. If it isn't installed, **Get app** opens the official download page; Connect can also open its website.
 
-1. Download or clone this repository on Windows.
-2. Extract it to a permanent folder. Do not run it from a temporary ZIP preview.
-3. Double-click `Orby.exe` for the easiest quiet launch, or use `Start-Orby.cmd` as the fallback launcher. Use `Start-Orby-Debug.cmd` when you want to see the diagnostic window.
-4. Leave the ChatGPT Windows app open. Orby watches the local ChatGPT/Codex activity and Windows UI signals; it does not need an API key.
-5. Move the pointer to the top edge to expand the notch. The first launch greets you with a boot glow and wave.
+No API key, password sharing or copied account files. Switch later under **Settings → AI connections**. Right-click the connected AI menu button for the picker. Keep the provider's app open or its supported browser tab selected so its accessible status can be read.
 
-Orby registers itself to start with Windows by default. To change this later, open Settings from the notch and toggle `Start Orby with Windows`. `Enable-Orby-Startup.cmd` is a manual fallback for profiles that block the app from writing the per-user startup entry.
+For portable use, extract **Orby-Windows.zip** and open **Orby.exe**. Keep the supporting files beside it. Source is also available as **Orby-Source.zip**.
 
-## What works
+## What's new in this beta
 
-- Normal ChatGPT and Work/Codex activity tracking with LIVE, DONE, STOP, FAIL, and NEEDS YOU states when the local signal is available.
-- A white primary Orby plus colored task companions for additional active tasks.
-- Small idle gestures, thinking variations, greeting wave, reduced-motion mode, and optional soft sound cues.
-- Drag-and-drop file handoff: drop a file on Orby, enter a prompt, and Orby opens a new ChatGPT chat, pastes the file and prompt, then attempts to send after confirming the composer.
-- Spotify cover art in the compact notch. Click it to open the Music tab inside the expanded notch. The tab includes play/pause, previous, next, shuffle, repeat, position, duration, and seeking when Windows exposes that capability.
-- System settings for music, sounds, quiet mode, reduced motion, notifications, downloads, tasks, watchlist, and startup.
+| Area | Updates |
+|---|---|
+| AI connections | ChatGPT/Codex retained; Claude and Gemini app/browser options with bundled provider logos, official download links and honest unavailable-status labels. |
+| Fast AI tab | Account fetching starts in the background; recent local data is ready when the tab opens. Temporary refresh failures retain still-valid information. First-time data needs a service response. |
+| Five-Orby layout | White Orby in front, four colored companions tightly tucked behind it, and dedicated text space. The familiar compact cluster is back. |
+| UI and lighting | Compact opaque-black palette, bold typography, circular characters, slow animated ambient glows and album-color lighting in the compact notch. |
+| Permission cards | Supported ChatGPT approvals can be reviewed in the notch. The home footer and compact text disappear immediately beneath overlays. |
+| Music | Album-cover access, responsive seek feedback, playback controls, shuffle/repeat and a working Windows output-volume slider. |
+| Games and displays | Hide during full-screen games/apps, restore afterward, adapt to monitor scaling and use display-paced animation. Achievable frame rate depends on the system. |
+| Character options | Animated colored companions, occasional eye styles, reduced motion and sound settings. The internal animation library remains available to the app. |
+| Windows package | Quiet executable launch and a per-user installer. Existing local settings/history stay outside the versioned app folder. |
 
-## Spotify
+## A look inside
 
-Open Spotify and play a track before testing the cover art. Orby uses Windows media-session controls, so playback actions depend on what Spotify and Windows expose for the current track. No Spotify credentials or API keys are stored. If Windows denies media-session access, the player stays visible and explains that Spotify is unavailable.
+These images are rendered from the current UI. Tasks, playback, cover art and quota values are **illustrative samples**, not a live user's account. Availability depends on the connected app and its readable signals.
 
-## ChatGPT connection limits
+### Home: room for every Orby
 
-Orby is a local Windows companion, not a ChatGPT plugin. It reads signals exposed by the installed ChatGPT app and its local activity/log surfaces. UI labels and desktop permissions can change between ChatGPT releases, so the included capture helpers are useful when a signal is missing:
+![Expanded home with white Orby and four tightly clustered companions](docs/home.png)
 
-- `Capture-ChatGPT-UI.cmd`
-- `Capture-ChatGPT-Logs.cmd`
-- `Capture-ChatGPT-Controls.cmd`
+### Music inside the notch
 
-Run these only while ChatGPT is open and actively showing the state you want to diagnose. The capture files are written under `%LOCALAPPDATA%\Orby`.
+![Music player with seek, playback controls and Windows output volume](docs/music.png)
 
-## Requirements
+Click the cover art to open the player. Leaving the expanded notch returns it to Home. Output volume affects **all apps**, not only Spotify. Seeking and playback depend on what the Windows media session supports.
 
-- Windows 10 or Windows 11
-- Windows PowerShell 5.1
-- A normal desktop session with WPF enabled
-- The ChatGPT Windows app for local ChatGPT tracking
-- Spotify desktop for music controls
+### AI status and remaining quota
 
-The source is ASCII-safe and does not require Node, Python, a server, or an API key.
+![AI panel with sample Codex quota values](docs/ai-panel.png)
 
-`Orby.exe` is a small Windows launcher beside the PowerShell/WPF files. Keep the whole extracted folder together; the executable starts the included `Orby.ps1` and does not need a separate installer. This keeps the app inspectable and preserves the built-in PowerShell 5.1 compatibility.
+Quota bars apply to **Codex**, not ordinary ChatGPT message limits or API credits. Other providers' quota/token information is not fabricated. Fresh account data is retained locally for quick opening and expires after three minutes; expired quota windows are hidden.
 
-## Validation
+### Choose your connection
 
-The release was checked with the animation catalog, idle scheduler, companion sync, music timeline/control routing, embedded Music tab rendering, artwork cache, task pack, and WPF startup checks. See `VALIDATION.txt` for the detailed local results and known environment limits.
+<img src="docs/connections.png" alt="Connection picker for ChatGPT/Codex, Claude and Gemini, with Connect and Get app buttons" width="510">
 
-## Project layout
+### Review supported permissions
 
-| Path | Purpose |
-| --- | --- |
-| `Orby.ps1` | Main WPF app and state presentation |
-| `Native-Avatar.cs` | Render-paced Orby avatar and companion animation |
-| `Animation-Catalog.cs` | Animation definitions |
-| `Reference-Home.xaml` | Expanded notch Home and Music pages |
-| `Reference-Home.ps1` | Home/Music page behavior |
-| `Media-Worker.ps1` | Spotify artwork and playback-session polling |
-| `Spotify-Control.ps1` | Play, pause, skip, repeat, shuffle, and seek routing |
-| `Start-Orby.cmd` | Quiet one-click launcher |
-| `Settings.xaml` | Settings window |
-| `*preview*` | Key screenshots and animation previews |
+![Sample permission overlay with Allow once and Deny](docs/permission.png)
 
-## License
+Scheduled reminders remain ordinary notifications. Conversational wording alone doesn't become an approval request. Claude/Gemini approvals and file attachments stay in their own apps.
 
-MIT. See `LICENSE`.
+## AI connections
 
-See `SECURITY.md` for the local-only connection model and files that must never be committed.
+| Provider | Current support | Limits |
+|---|---|---|
+| ChatGPT Windows / local Codex | Existing local activity integration, supported inline permission handling, file handoff and Codex account information where supplied. | Ordinary ChatGPT message limits are unavailable; access depends on local app signals. |
+| Claude | **Beta:** opens the installed app or claude.ai; reads accessible composer and stop-generation controls. | Signed-in end-to-end validation is pending. Approvals, attachments and account quota stay in Claude. |
+| Gemini | **Beta:** opens the installed app or gemini.google.com; reads accessible composer and stop-generation controls. | Signed-in end-to-end validation is pending. Approvals, attachments and account quota stay in Gemini. |
+| Other providers | Not supported yet. | A tested adapter is required. This is not a universal AI connector. |
+
+The menu icon changes to the selected connected provider: OpenAI, Claude or Gemini. Logos are bundled for offline use. Switching back restores the OpenAI icon; saved selections are normalized on startup. Sign-in screens are not reported as connected.
+
+Only verified readable connections are shown as connected. Hidden tabs, inaccessible app content and stale snapshots can't provide live status. The app distinguishes “open but status unavailable” from a readable connection.
+
+Official apps: [ChatGPT](https://chatgpt.com/download/) · [Claude](https://claude.com/download) · [Gemini](https://gemini.google/desktop/)
+
+## Privacy, requirements and safety
+
+- Windows 10/11, Windows PowerShell 5.1 and .NET Framework/WPF are required.
+- Settings, account cache and diagnostics stay under `%LOCALAPPDATA%\Orby`.
+- Public packages exclude personal settings, chat captures, histories, API keys and sign-in files. Orby doesn't host an account-data server.
+- Local accessibility/log readers and Windows media sessions supply supported app signals. Diagnostic captures are optional: review them before sharing.
+- Automatic startup is disabled in this security build. No scheduled tasks, execution-policy overrides or antivirus exclusions are added.
+- Executables are unsigned. Don't disable security protection to install them; report a detection with its details. See [Security](SECURITY.md).
+
+## Open source and validation
+
+MIT licensed, with third-party notices in `third-party`. App source and focused tests live in `src/`; screenshots live in `docs/`. Executable downloads belong in Releases. Run `Build.ps1` in Windows PowerShell to build `dist/Orby-Setup.exe` and `dist/Orby-Windows.zip`. Keep runtime files together.
+
+[VALIDATION.md](VALIDATION.md) records local checks and limits. Detector, provider filtering, stale-state handling, music input, five-Orby spacing, overlay hiding and background AI refresh have focused checks. Claude/Gemini live sign-in testing remains pending; beta status is intentional.
+
+Found a bug? Open an issue with your Windows version, provider/app, display scaling and steps to reproduce. Remove private information from screenshots and logs first.
