@@ -14,12 +14,19 @@ function Update-OrbyShelf {
   else{$script:desktopControls.ShelfMessage.Text='Saved '+$task.Result.Name+' to your local shelf';Add-OrbyAlert 'file' 'File added' $task.Result.Name}
   $script:orbyCopies.RemoveAt($i)
  }
- if(([datetime]::UtcNow-$script:shelfPollAt).TotalSeconds -lt 3){return};$script:shelfPollAt=[datetime]::UtcNow
- if(-not $script:desktopControls -or -not (Test-Path -LiteralPath $script:orbyInbox)){return}
- $files=@(Get-ChildItem -LiteralPath $script:orbyInbox -File | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 100)
- $signature=($files | ForEach-Object {$_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks}) -join ';'
- if($signature -eq $script:orbyShelfSignature){return};$script:orbyShelfSignature=$signature
- $selected=$script:desktopControls.ShelfList.SelectedItem.Path
- $script:desktopControls.ShelfList.ItemsSource=@($files | ForEach-Object {[pscustomobject]@{Path=$_.FullName;Display=$_.Name+'  |  '+[math]::Round($_.Length/1KB,1)+' KB'}})
- $script:desktopControls.ShelfList.SelectedItem=@($script:desktopControls.ShelfList.Items | Where-Object {$_.Path -eq $selected}) | Select-Object -First 1
+ if(-not $script:desktopControls){return}
+ if($script:shelfInventoryTask -and $script:shelfInventoryTask.IsCompleted){
+  if(-not $script:shelfInventoryTask.IsFaulted -and $script:shelfInventoryTask.Result.Valid){
+   $files=$script:shelfInventoryTask.Result.Files
+   $signature=($files | ForEach-Object {$_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks}) -join ';'
+   if($signature -ne $script:orbyShelfSignature){$script:orbyShelfSignature=$signature
+    $selected=$script:desktopControls.ShelfList.SelectedItem.Path
+    $script:desktopControls.ShelfList.ItemsSource=@($files | ForEach-Object {[pscustomobject]@{Path=$_.FullName;Display=$_.Name+'  |  '+[math]::Round($_.Length/1KB,1)+' KB'}})
+    $script:desktopControls.ShelfList.SelectedItem=@($script:desktopControls.ShelfList.Items | Where-Object {$_.Path -eq $selected}) | Select-Object -First 1
+   }
+  }
+  $script:shelfInventoryTask=$null
+ }
+ if(-not $script:shelfInventoryTask -and ([datetime]::UtcNow-$script:shelfPollAt).TotalSeconds -ge 3){$script:shelfPollAt=[datetime]::UtcNow;$script:shelfInventoryTask=[OrbyFileInventory]::Poll($script:orbyInbox,100)}
 }
+

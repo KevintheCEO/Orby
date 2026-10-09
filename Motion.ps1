@@ -18,6 +18,12 @@ function Invoke-OrbyMotion {
 
 Add-Type -Path (Join-Path $PSScriptRoot 'Coucou-Motion.cs') -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework')
 
-Add-Type -Path @((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $PSScriptRoot 'Animation-Catalog.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
+Add-Type -Path @((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $PSScriptRoot 'Hydration-Avatar.cs'),(Join-Path $PSScriptRoot 'Rendered-Assets.cs'),(Join-Path $PSScriptRoot 'Hydration-Model.cs'),(Join-Path $PSScriptRoot 'Animation-Catalog.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
 $script:displayHz=[OrbyDisplay]::RefreshHz([Windows.Forms.Screen]::PrimaryScreen.DeviceName)
 
+
+Add-Type -Path (Join-Path $PSScriptRoot 'Refresh-Clock.cs') -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework')
+[OrbyRefreshClock]::Configure($script:displayHz)
+
+
+[OrbyRenderedAssets]::Configure($PSScriptRoot)

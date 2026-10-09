@@ -1,0 +1,12 @@
+using System;using System.Runtime.InteropServices;
+[ComImport,Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]class AudioEnumerator{}
+[ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]interface AudioDevices{int EnumAudioEndpoints(int flow,int mask,out IntPtr devices);int GetDefaultAudioEndpoint(int flow,int role,out AudioDevice device);}
+[ComImport,Guid("D666063F-1587-4E43-81F1-B948E807363F"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]interface AudioDevice{int Activate(ref Guid id,int context,IntPtr parameters,[MarshalAs(UnmanagedType.IUnknown)]out object result);}
+[ComImport,Guid("5CDF2C82-841E-4546-9722-0CF74078229A"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]interface EndpointVolume{
+ int RegisterControlChangeNotify(IntPtr p);int UnregisterControlChangeNotify(IntPtr p);int GetChannelCount(out uint n);int SetMasterVolumeLevel(float v,ref Guid g);int SetMasterVolumeLevelScalar(float v,ref Guid g);int GetMasterVolumeLevel(out float v);int GetMasterVolumeLevelScalar(out float v);int SetChannelVolumeLevel(uint c,float v,ref Guid g);int SetChannelVolumeLevelScalar(uint c,float v,ref Guid g);int GetChannelVolumeLevel(uint c,out float v);int GetChannelVolumeLevelScalar(uint c,out float v);int SetMute([MarshalAs(UnmanagedType.Bool)]bool muted,ref Guid g);int GetMute([MarshalAs(UnmanagedType.Bool)]out bool muted);
+}
+public static class OrbyOutputVolume{
+ static EndpointVolume Open(out object enumerator,out AudioDevice device){enumerator=new AudioEnumerator();Marshal.ThrowExceptionForHR(((AudioDevices)enumerator).GetDefaultAudioEndpoint(0,1,out device));Guid id=typeof(EndpointVolume).GUID;object result;Marshal.ThrowExceptionForHR(device.Activate(ref id,23,IntPtr.Zero,out result));return (EndpointVolume)result;}
+ public static double Get(){object e=null;AudioDevice d=null;EndpointVolume v=null;try{v=Open(out e,out d);float n;Marshal.ThrowExceptionForHR(v.GetMasterVolumeLevelScalar(out n));return n*100;}finally{if(v!=null)Marshal.ReleaseComObject(v);if(d!=null)Marshal.ReleaseComObject(d);if(e!=null)Marshal.ReleaseComObject(e);}}
+ public static void Set(double value){object e=null;AudioDevice d=null;EndpointVolume v=null;try{v=Open(out e,out d);Guid g=Guid.Empty;Marshal.ThrowExceptionForHR(v.SetMasterVolumeLevelScalar((float)(Math.Max(0,Math.Min(100,value))/100),ref g));}finally{if(v!=null)Marshal.ReleaseComObject(v);if(d!=null)Marshal.ReleaseComObject(d);if(e!=null)Marshal.ReleaseComObject(e);}}
+}

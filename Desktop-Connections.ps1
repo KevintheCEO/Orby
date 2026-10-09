@@ -1,3 +1,4 @@
+﻿Add-Type -Path (Join-Path $PSScriptRoot 'File-Inventory.cs')
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing,System.Net.Http
 Add-Type -TypeDefinition @'
 using System;
@@ -11,34 +12,23 @@ public static class OrbyDesktopNative {
 $script:orbySettingsPath=Join-Path $logDir 'settings.json'
 $script:orbyReminderPath=Join-Path $logDir 'reminders.json'
 $script:orbyAlertPath=Join-Path $logDir 'alerts.json'
-$script:orbySettings=[ordered]@{ReducedMotion=$false;Music=$true;Health=$true;Notifications=$true;Downloads=$true;Tasks=$true;Watchlist=$true;AllowPublicNews=$false;NotificationApps='';MediaApp='';WatchTopics='';DownloadFolder='';Quiet=$false;Preview=$true;StartWithWindows=$true;FocusMinutes=25;BreakMinutes=0;Favorites=@()}
+$script:orbySettings=[ordered]@{HideFullscreen=$true;EyeEffects=$true;ReducedMotion=$false;Music=$true;Health=$true;Notifications=$true;Downloads=$true;Tasks=$true;Watchlist=$true;AllowPublicNews=$false;NotificationApps='';MediaApp='';WatchTopics='';DownloadFolder='';Quiet=$false;Preview=$true;StartWithWindows=$false;FocusMinutes=25;BreakMinutes=0;Favorites=@()}
 $script:orbySettings['Sounds']=$true
+$script:orbySettings['WaterEnabled']=$true;$script:orbySettings['WaterGoalMl']=3000;$script:orbySettings['WaterDrinkMl']=100;$script:orbySettings['WaterIntervalMinutes']=75;$script:orbySettings['WaterWakeHour']=8;$script:orbySettings['WaterSleepHour']=23
+$script:orbySettings['WaterSessionHours']=8;$script:orbySettings['WaterSipPlanVersion']=10
+$script:orbySettings.PrimaryProvider='chatgpt';$script:orbySettings.ProviderEnabled='chatgpt'
 try{if(Test-Path -LiteralPath $script:orbySettingsPath){$saved=Get-Content $script:orbySettingsPath -Raw | ConvertFrom-Json;foreach($key in @($script:orbySettings.Keys)){if($saved.PSObject.Properties[$key]){$script:orbySettings[$key]=$saved.$key}}}}catch{Write-OrbitLog 'Settings could not be read; using defaults'}
+$script:orbySettings.PrimaryProvider=([string]$script:orbySettings.PrimaryProvider).ToLowerInvariant()
+if($script:orbySettings.PrimaryProvider -notin @('chatgpt','claude','gemini')){$script:orbySettings.PrimaryProvider='chatgpt'}
+$script:orbySettings.ProviderEnabled=(@((([string]$script:orbySettings.ProviderEnabled).ToLowerInvariant() -split ',')+$script:orbySettings.PrimaryProvider) | Where-Object {$_ -in @('chatgpt','claude','gemini')} | Select-Object -Unique) -join ','
+if(-not $saved -or $saved.WaterSipPlanVersion -ne 10){$script:orbySettings.WaterDrinkMl=100;if($script:orbySettings.WaterSessionHours -lt 8 -or $script:orbySettings.WaterSessionHours -gt 10){$script:orbySettings.WaterSessionHours=8};$script:orbySettings.WaterSipPlanVersion=10}
 if(-not $script:orbySettings.DownloadFolder){
     try{$path=(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders').'{374DE290-123F-4565-9164-39C4925E467B}';$script:orbySettings.DownloadFolder=[Environment]::ExpandEnvironmentVariables($path)}catch{}
-    if(-not $script:orbySettings.DownloadFolder){$script:orbySettings.DownloadFolder=Join-Path $env:USERPROFILE 'Downloads'}
+    
+if(-not $script:orbySettings.DownloadFolder){$script:orbySettings.DownloadFolder=Join-Path $env:USERPROFILE 'Downloads'}
 }
-function Set-OrbyStartupRegistration {
-    param([bool]$Enabled)
-    try {
-        $runKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-        $name='Orby'
-        if($Enabled){
-            $path=Join-Path $PSScriptRoot 'Start-Orby.cmd'
-            $value='cmd.exe /c ""'+$path+'""'
-            New-Item -Path $runKey -Force | Out-Null
-            Set-ItemProperty -Path $runKey -Name $name -Value $value
-            $script:orbyStartupStatus='Starts with Windows'
-        } else {
-            Remove-ItemProperty -Path $runKey -Name $name -ErrorAction SilentlyContinue
-            $script:orbyStartupStatus='Manual start'
-        }
-    } catch {
-        $script:orbyStartupStatus='Startup setting unavailable'
-        Write-OrbitLog ('Startup registration warning: '+$_.Exception.Message)
-    }
-}
-Set-OrbyStartupRegistration ([bool]$script:orbySettings.StartWithWindows)
+$script:orbySettings.StartWithWindows=$false
+$script:orbyStartupStatus='Manual start (security build)'
 $script:orbyReminders=New-Object System.Collections.Generic.List[object]
 try{if(Test-Path -LiteralPath $script:orbyReminderPath){foreach($r in @(Get-Content $script:orbyReminderPath -Raw | ConvertFrom-Json)){if($r -and -not $r.Done){$script:orbyReminders.Add($r)}}}}catch{}
 $script:orbyAlerts=New-Object System.Collections.Generic.List[object]
@@ -92,17 +82,20 @@ function Update-OrbyLocal {
             $script:orbyHealthFlags[$key]=$conditions[$key]
         }
     }
-    if($script:orbySettings.Downloads -and ($Now-$script:orbyDownloadAt).TotalSeconds -ge 2){
-        $script:orbyDownloadAt=$Now;$folder=$script:orbySettings.DownloadFolder
-        if(Test-Path -LiteralPath $folder){
-            foreach($file in @(Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 200)){
+    if($script:downloadInventoryTask -and $script:downloadInventoryTask.IsCompleted){
+        if(-not $script:downloadInventoryTask.IsFaulted){
+            $inventory=$script:downloadInventoryTask.Result
+            if($inventory.Valid){foreach($file in $inventory.Files){
                 $key=$file.FullName;$old=$script:orbyDownloads[$key]
                 if(-not $old){$script:orbyDownloads[$key]=@{Length=$file.Length;Changed=$Now;Announced=($file.LastWriteTimeUtc -lt $script:orbyDownloadStarted);Partial=($file.Name -match '\.(crdownload|part|partial|download|tmp)$')};continue}
                 if($old.Length -ne $file.Length){$old.Length=$file.Length;$old.Changed=$Now}
                 if(-not $old.Partial -and -not $old.Announced -and ($Now-$old.Changed).TotalSeconds -ge 4){$old.Announced=$true;Add-OrbyAlert 'download' 'File ready' $file.Name}
-            }
-            foreach($key in @($script:orbyDownloads.Keys)){if(-not (Test-Path -LiteralPath $key)){$script:orbyDownloads.Remove($key)}}
+            };foreach($key in @($script:orbyDownloads.Keys)){if(-not $inventory.Paths.Contains($key)){$script:orbyDownloads.Remove($key)}}}
         }
+        $script:downloadInventoryTask=$null
+    }
+    if($script:orbySettings.Downloads -and -not $script:downloadInventoryTask -and ($Now-$script:orbyDownloadAt).TotalSeconds -ge 2){
+        $script:orbyDownloadAt=$Now;$script:downloadInventoryTask=[OrbyFileInventory]::Poll($script:orbySettings.DownloadFolder,200)
     }
 }
 
@@ -130,6 +123,11 @@ function Start-OrbyWorker {
     $script:mediaWorker=[powershell]::Create();$script:mediaWorker.Runspace=$script:mediaRunspace
     [void]$script:mediaWorker.AddScript([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Media-Worker.ps1'))).AddArgument($script:orbyShared).AddArgument($PSScriptRoot).AddArgument($logDir)
     $script:mediaWorkerHandle=$script:mediaWorker.BeginInvoke()
+    $script:mediaControlRunspace=[runspacefactory]::CreateRunspace();$script:mediaControlRunspace.ApartmentState='STA';$script:mediaControlRunspace.Open()
+    $script:mediaControlWorker=[powershell]::Create();$script:mediaControlWorker.Runspace=$script:mediaControlRunspace
+    [void]$script:mediaControlWorker.AddScript([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Media-Control-Worker.ps1'))).AddArgument($script:orbyShared).AddArgument($PSScriptRoot).AddArgument($logDir)
+    $script:mediaControlHandle=$script:mediaControlWorker.BeginInvoke()
+
 
 }
 
@@ -151,3 +149,4 @@ function Invoke-OrbyQuickAction {
         focus{if($script:orbyFocusEnd -eq [datetime]::MinValue){$script:orbyFocusEnd=[datetime]::UtcNow.AddMinutes($script:orbySettings.FocusMinutes)}else{$script:orbyFocusEnd=[datetime]::MinValue}}
     }
 }
+

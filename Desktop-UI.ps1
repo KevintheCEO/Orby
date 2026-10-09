@@ -1,4 +1,4 @@
-function New-OrbyPanel {
+﻿function New-OrbyPanel {
     [xml]$xml=(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Desktop-Panel.xaml') -Raw).Replace('<Storyboard>',('<Storyboard Timeline.DesiredFrameRate="'+$(if($script:displayHz -gt 0){$script:displayHz}else{60})+'">'))
     $root=[Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $xml))
     $script:desktopControls=@{Root=$root}
@@ -121,11 +121,22 @@ function Show-OrbySettings {
     if($script:settingsWindow -and $script:settingsWindow.IsVisible){$script:settingsWindow.Activate();return}
     [xml]$xml=(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Settings.xaml') -Raw).Replace('<Storyboard>',('<Storyboard Timeline.DesiredFrameRate="'+$(if($script:displayHz -gt 0){$script:displayHz}else{60})+'">'))
     $script:settingsWindow=[Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $xml))
+    if($script:desktopPanel){
+      if($script:desktopPanel.Parent -is [Windows.Controls.ContentControl]){$script:desktopPanel.Parent.Content=$null}
+      $script:settingsWindow.FindName('SettingsControlsHost').Content=$script:desktopPanel
+    }
     $script:settingsControls=@{}
-    foreach($name in @('EnableReducedMotion','EnableSounds','EnableStartWithWindows','EnableMusic','EnableNotifications','EnableHealth','EnableDownloads','EnableTasks','EnableWatchlist','EnableAllowPublicNews','EnableQuiet','EnablePreview','NotificationApps','MediaApp','MediaHelp','DownloadFolder','BrowseDownloadFolder','SettingsWatchTopics','FocusMinutes','BreakMinutes','FavoriteList','AddFavorite','RemoveFavorite','LaunchFavorite','SettingsMessage','SaveSettings','CloseSettings','EnableNotificationAccess','NotificationHelp')){$script:settingsControls[$name]=$script:settingsWindow.FindName($name)}
+    foreach($name in @('AIConnections','EnableWater','WaterSummary','WaterGoalMl','WaterDrinkMl','WaterSessionHours','WaterWakeHour','WaterSleepHour','PreviewWater','LogWater','EnableHideFullscreen','EnableEyeEffects','EnableReducedMotion','EnableSounds','EnableStartWithWindows','EnableMusic','EnableNotifications','EnableHealth','EnableDownloads','EnableTasks','EnableWatchlist','EnableAllowPublicNews','EnableQuiet','EnablePreview','NotificationApps','MediaApp','MediaHelp','DownloadFolder','BrowseDownloadFolder','SettingsWatchTopics','FocusMinutes','BreakMinutes','FavoriteList','AddFavorite','RemoveFavorite','LaunchFavorite','SettingsMessage','SaveSettings','CloseSettings','EnableNotificationAccess','NotificationHelp')){$script:settingsControls[$name]=$script:settingsWindow.FindName($name)}
     $c=$script:settingsControls
-    foreach($key in @('ReducedMotion','Sounds','StartWithWindows','Music','Notifications','Health','Downloads','Tasks','Watchlist','AllowPublicNews','Quiet','Preview')){$c['Enable'+$key].IsChecked=[bool]$script:orbySettings[$key]}
+    $c['EnableStartWithWindows'].IsEnabled=$false;$c['EnableStartWithWindows'].ToolTip='Automatic startup is disabled in this security build.'
+    foreach($key in @('HideFullscreen','EyeEffects','ReducedMotion','Sounds','StartWithWindows','Music','Notifications','Health','Downloads','Tasks','Watchlist','AllowPublicNews','Quiet','Preview')){$c['Enable'+$key].IsChecked=[bool]$script:orbySettings[$key]}
     foreach($key in @('NotificationApps','MediaApp','DownloadFolder','FocusMinutes','BreakMinutes')){$c[$key].Text=[string]$script:orbySettings[$key]}
+    $c.EnableWater.IsChecked=[bool]$script:orbySettings.WaterEnabled
+    foreach($key in @('WaterGoalMl','WaterDrinkMl','WaterSessionHours','WaterWakeHour','WaterSleepHour')){$c[$key].Text=[string]$script:orbySettings[$key]}
+    $c.WaterSummary.Text=Get-OrbyWaterSummary
+    $c.AIConnections.Add_Click({Show-OrbyConnections})
+    $c.PreviewWater.Add_Click({if(-not (Start-OrbyWaterReminder -Preview)){$script:settingsControls.SettingsMessage.Text='Finish the current AI action before previewing.'}})
+    $c.LogWater.Add_Click({Confirm-OrbyWater -Manual})
     $c.SettingsWatchTopics.Text=$script:orbySettings.WatchTopics
     $c.MediaHelp.Text='Detected sessions: '+($script:orbyShared.MediaApps -join ', ')
     $c.FavoriteList.ItemsSource=@($script:orbySettings.Favorites)
@@ -148,15 +159,26 @@ function Show-OrbySettings {
     })
     $c.SaveSettings.Add_Click({
         try{
+            $waterValues=@{}
+            foreach($spec in @(@('WaterGoalMl',2500,3000),@('WaterDrinkMl',50,100),@('WaterSessionHours',1,16),@('WaterWakeHour',0,23),@('WaterSleepHour',0,23))){
+                $number=0;$key=$spec[0]
+                if(-not [int]::TryParse($script:settingsControls[$key].Text,[ref]$number) -or $number -lt $spec[1] -or $number -gt $spec[2]){throw ($key+' must be between '+$spec[1]+' and '+$spec[2])}
+                $waterValues[$key]=$number
+            }
+            if($waterValues.WaterWakeHour -eq $waterValues.WaterSleepHour){throw 'Choose different wake and sleep hours'}
+            foreach($key in $waterValues.Keys){$script:orbySettings[$key]=$waterValues[$key]}
+            $script:orbySettings.WaterEnabled=[bool]$script:settingsControls.EnableWater.IsChecked
+            Sync-OrbyWaterSettings;$script:waterNextSessionSecond=$script:waterPlan.Next($script:waterSessionClock.Elapsed.TotalSeconds);Save-OrbyWater
+            $script:settingsControls.WaterSummary.Text=Get-OrbyWaterSummary
             $focus=0;$break=0
             if(-not [int]::TryParse($script:settingsControls.FocusMinutes.Text,[ref]$focus) -or $focus -lt 1 -or $focus -gt 240){throw 'Focus minutes must be between 1 and 240'}
             if(-not [int]::TryParse($script:settingsControls.BreakMinutes.Text,[ref]$break) -or $break -lt 0 -or $break -gt 240){throw 'Break minutes must be between 0 and 240'}
             if(-not (Test-Path -LiteralPath $script:settingsControls.DownloadFolder.Text -PathType Container)){throw 'Choose an existing download folder'}
-            foreach($key in @('ReducedMotion','Sounds','StartWithWindows','Music','Notifications','Health','Downloads','Tasks','Watchlist','AllowPublicNews','Quiet','Preview')){$script:orbySettings[$key]=[bool]$script:settingsControls['Enable'+$key].IsChecked}
+            foreach($key in @('HideFullscreen','EyeEffects','ReducedMotion','Sounds','StartWithWindows','Music','Notifications','Health','Downloads','Tasks','Watchlist','AllowPublicNews','Quiet','Preview')){$script:orbySettings[$key]=[bool]$script:settingsControls['Enable'+$key].IsChecked}
             foreach($key in @('NotificationApps','MediaApp','DownloadFolder')){$script:orbySettings[$key]=$script:settingsControls[$key].Text.Trim()}
             $script:orbySettings.WatchTopics=$script:settingsControls.SettingsWatchTopics.Text.Trim();$script:orbySettings.FocusMinutes=$focus;$script:orbySettings.BreakMinutes=$break
             $script:orbyNextBreak=[datetime]::UtcNow.AddMinutes([Math]::Max(1,$break))
-            Save-OrbySettings;Set-OrbyStartupRegistration ([bool]$script:orbySettings.StartWithWindows);$script:desktopControls.WatchTopics.Text=$script:orbySettings.WatchTopics
+            Save-OrbySettings;$script:desktopControls.WatchTopics.Text=$script:orbySettings.WatchTopics
             $script:settingsControls.SettingsMessage.Text='Saved. Your choices are active.'
         }catch{$script:settingsControls.SettingsMessage.Text=$_.Exception.Message}
     })
@@ -171,6 +193,7 @@ function Start-OrbyTray {
     $script:orbyTray.Text='Orby - your desktop companion';$script:orbyTray.Visible=$true
     $menu=New-Object Windows.Forms.ContextMenuStrip
     $settings=$menu.Items.Add('Settings');$settings.Add_Click({Show-OrbySettings})
+    $water=$menu.Items.Add('Log water (one drink)');$water.Add_Click({Confirm-OrbyWater -Manual})
     $focus=$menu.Items.Add('Start / stop focus');$focus.Add_Click({Invoke-OrbyQuickAction 'focus'})
     $quiet=$menu.Items.Add('Toggle quiet mode');$quiet.Add_Click({$script:orbySettings.Quiet=-not $script:orbySettings.Quiet;Save-OrbySettings})
     $recenter=$menu.Items.Add('Recenter Orby');$recenter.Add_Click({Position-Orbit})

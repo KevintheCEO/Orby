@@ -1,4 +1,4 @@
-function Format-OrbyMusicTime {
+﻿function Format-OrbyMusicTime {
  param([double]$Seconds)
  $n=[int][math]::Floor([math]::Max(0,$Seconds))
  return ('{0}:{1:00}' -f [int][math]::Floor($n/60),($n%60))
@@ -9,7 +9,12 @@ function Send-OrbyMusicControl {
  if(-not $m){return}
  if(-not $TrackKey){$TrackKey=$m.TrackKey}
  $script:orbyShared.SpotifyResult=''
- $script:orbyShared.SpotifyCommands.Enqueue([pscustomobject]@{Action=$Action;Value=$Value;App=$m.App;TrackKey=$TrackKey})
+ $id=[guid]::NewGuid().ToString()
+ if($Action -eq 'seek'){
+  $value=[math]::Max($m.SeekMin,[math]::Min($m.SeekMax,[double]$Value))
+  $script:pendingMusicSeek=[pscustomobject]@{Id=$id;TrackKey=$TrackKey;Position=$value;At=[datetime]::UtcNow}
+ }
+ $script:orbyShared.SpotifyCommands.Enqueue([pscustomobject]@{Id=$id;Action=$Action;Value=$Value;App=$m.App;TrackKey=$TrackKey})
 }
 function New-OrbyMusicPlayer {
  [xml]$xml=Get-Content (Join-Path $PSScriptRoot 'Music-Player.xaml') -Raw
@@ -70,9 +75,7 @@ function Update-OrbyMusicPlayer {
  $c.PlayerRepeat.Foreground=if($m.Repeat -in @('List','Track')){[Windows.Media.Brushes]::MediumSpringGreen}else{[Windows.Media.Brushes]::LightGray}
  $c.PlayerRepeat.Content=if($m.Repeat -eq 'Track'){'1'}else{[string][char]0x21BB};$c.PlayerRepeat.ToolTip='Repeat: '+$m.Repeat
  if($script:playerArtKey -ne $m.ArtworkKey){$script:playerArtKey=$m.ArtworkKey;try{$c.MusicCover.Source=Convert-OrbyAlbumBitmap $m.ArtworkBytes}catch{$c.MusicCover.Source=$null}}
- $position=[double]$m.Position
- if($m.Playing){$position+=[math]::Max(0,([datetime]::UtcNow-$m.At).TotalSeconds)}
- $position=[math]::Min($m.Start+$m.Duration,$position)
+ $position=Get-OrbySmoothMusicPosition $m
  $c.PlayerSeek.IsEnabled=$m.CanSeek
  if(-not $script:musicDragging){
   $c.PlayerSeek.Minimum=$m.Start;$c.PlayerSeek.Maximum=[math]::Max($m.Start+1,$m.Start+$m.Duration);$c.PlayerSeek.Value=$position
@@ -80,4 +83,19 @@ function Update-OrbyMusicPlayer {
  $c.PlayerPosition.Text=Format-OrbyMusicTime ($position-$m.Start)
  $c.PlayerDuration.Text=if($m.Duration -gt 0){Format-OrbyMusicTime $m.Duration}else{'--:--'}
  $c.PlayerNotice.Text=if($script:orbyShared.SpotifyResult){$script:orbyShared.SpotifyResult}elseif(-not $m.CanSeek){'Seeking is unavailable for this track'}else{''}
+}
+
+function Get-OrbySmoothMusicPosition {
+ param($Media,[datetime]$Now=[datetime]::UtcNow)
+ $position=[double]$Media.Position
+ if($Media.Playing){$position+=[math]::Max(0,($Now-$Media.At).TotalSeconds)}
+ $pending=$script:pendingMusicSeek
+ if($pending){
+  $age=($Now-$pending.At).TotalSeconds;$reply=$script:orbyShared.SpotifyControlReply
+  $failed=$reply -and $reply.Id -eq $pending.Id -and -not $reply.Ok
+  $target=$pending.Position+$(if($Media.Playing){[math]::Max(0,$age)}else{0})
+  $confirmed=$Media.At -gt $pending.At -and [math]::Abs($position-$target) -lt 1.5
+  if($Media.TrackKey -ne $pending.TrackKey -or $failed -or $confirmed -or $age -gt 3){$script:pendingMusicSeek=$null}else{$position=$target}
+ }
+ return [math]::Max($Media.Start,[math]::Min($Media.Start+$Media.Duration,$position))
 }

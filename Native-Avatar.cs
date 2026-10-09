@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using OrbyPack;
 using System.Collections;
 using System.Diagnostics;
@@ -8,19 +8,27 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
-public sealed class OrbyAvatarRenderer : IDisposable {
+public sealed partial class OrbyAvatarRenderer : IDisposable {
+ public bool WaterPriority;
+ public bool StatusConnected;public bool ShowStatusDot=true;
+ readonly TranslateTransform statusMove=new TranslateTransform();
+ readonly SolidColorBrush statusBrush=new SolidColorBrush(Colors.Gray);
+ double statusFrame=-1;
+ public bool EyeEffects=true;
+ string lastEyeStyle="";
+ public static readonly string[] EyeStyles={"star_eyes","eyes_nightlight","eyes_ocean","eyes_lilac","eyes_sunset","eyes_sleepy"};
  public OrbyAvatarRenderer SyncWith;
  public void DrawSyncedFrame(){
   var source=SyncWith;if(source==null)return;
   active=source.active;baseId=source.baseId;clipStart=source.clipStart;state=source.state;stateKey=source.stateKey;action=source.action;
   blinkStart=source.blinkStart;nextBlink=source.nextBlink;overrideUntil=source.overrideUntil;
-  ReducedMotion=source.ReducedMotion;MusicPlaying=source.MusicPlaying;CursorX=source.CursorX;CursorY=source.CursorY;
-  Progress=source.Progress;AudioEnvelope=source.AudioEnvelope;Draw(source.TimeSeconds);
+  StatusConnected=source.StatusConnected;EyeEffects=source.EyeEffects;ReducedMotion=source.ReducedMotion;MusicPlaying=source.MusicPlaying;CursorX=source.CursorX;CursorY=source.CursorY;
+  Progress=source.Progress;WaterProgress=source.WaterProgress;AudioEnvelope=source.AudioEnvelope;Draw(source.TimeSeconds);
  }
  readonly RotateTransform rotation=new RotateTransform(); readonly ScaleTransform scale=new ScaleTransform();readonly TranslateTransform translate=new TranslateTransform();
  readonly ScaleTransform lidLeft=new ScaleTransform(1,1,11,18),lidRight=new ScaleTransform(1,1,24,18);
  readonly TranslateTransform eyeLeftMove=new TranslateTransform(),eyeRightMove=new TranslateTransform();
- readonly Ellipse[] particles=new Ellipse[6];readonly FrameworkElement body;readonly Canvas root;
+ readonly TranslateTransform[] particleMoves=new TranslateTransform[6];readonly Ellipse[] particles=new Ellipse[6];readonly FrameworkElement body;readonly Canvas root;
  readonly Ellipse listeningRing=new Ellipse{Width=42,Height=42,Stroke=Brushes.DodgerBlue,StrokeThickness=1};
  readonly Path arms=new Path{Stroke=Brushes.LightSlateGray,StrokeThickness=1.4};readonly Canvas headphone=CreateHeadphones();
  readonly Border cup=new Border{Width=7,Height=6,Background=Brushes.LightSlateGray,CornerRadius=new CornerRadius(1)};
@@ -28,7 +36,7 @@ public sealed class OrbyAvatarRenderer : IDisposable {
  [StructLayout(LayoutKind.Sequential)]struct Pointer{public int X,Y;}
  [DllImport("user32.dll")]static extern bool GetLastInputInfo(ref InputStamp stamp);
  [DllImport("user32.dll")]static extern bool GetCursorPos(out Pointer point);
- double inputPoll,nextIdleAt;bool sleeping;string lastIdleId="";
+ double inputPoll,nextIdleAt,nextStarAt=150;bool sleeping;string lastIdleId="";
  readonly Random personality=new Random(Guid.NewGuid().GetHashCode());
  public static readonly string[] IdleGestures={"curious_tilt","look_left_right","look_up_down","blink_double","eye_peek","tiny_arms","bored_idle","playful_bounce","idle_shuffle","idle_stretch","idle_ponder","idle_double_hop","idle_toe_tap","idle_peek_around","idle_daydream","idle_nod","idle_wiggle","idle_sway"};
  public static readonly string[] ThinkingGestures={"thinking_basic","thinking_deep","thinking_ponder","thinking_read","thinking_connect"};
@@ -61,7 +69,7 @@ public sealed class OrbyAvatarRenderer : IDisposable {
  }
  static readonly Geometry armPeek=Geometry.Parse("M 8,23 Q 3,23 3,19 M 45,23 Q 50,23 50,19"),armWave=Geometry.Parse("M 8,23 Q 3,23 3,19 M 45,23 Q 50,18 49,13");
  readonly Path left,right,pattern;readonly FrameworkElement white,black,led,check,ask;readonly Stopwatch time=Stopwatch.StartNew();
- string state="idle",action="";TimeSpan last=TimeSpan.MinValue;public long Frames;public double MaxFrameGapMs;double prev;double started;readonly double[] gaps=new double[4096];int gapCount;
+ public bool Suspended;double measuredTime;string state="idle",action="";TimeSpan last=TimeSpan.MinValue;public long Frames;public double MaxFrameGapMs;double prev;double started;readonly double[] gaps=new double[4096];int gapCount;
  static readonly Geometry[] geometries=new Geometry[]{
   Geometry.Parse("M 11,15 A 2.4,3.5 0 1 1 11,22 A 2.4,3.5 0 1 1 11,15 Z"),
   Geometry.Parse("M 24,15 A 2.4,3.5 0 1 1 24,22 A 2.4,3.5 0 1 1 24,15 Z"),
@@ -86,18 +94,23 @@ public sealed class OrbyAvatarRenderer : IDisposable {
   body=(FrameworkElement)parts["OrbBody"];root=(Canvas)parts["Root"];var face=(FrameworkElement)parts["OrbFace"];
   left=(Path)parts["OrbEyeL"];right=(Path)parts["OrbEyeR"];var lg=new TransformGroup();lg.Children.Add(lidLeft);lg.Children.Add(eyeLeftMove);left.RenderTransform=lg;
   var rg=new TransformGroup();rg.Children.Add(lidRight);rg.Children.Add(eyeRightMove);right.RenderTransform=rg;pattern=(Path)parts["OrbPattern"];
-  white=(FrameworkElement)parts["OrbWhiteDot"];black=(FrameworkElement)parts["OrbBlackDot"];led=(FrameworkElement)parts["OrbLed"];check=(FrameworkElement)parts["OrbCheck"];ask=(FrameworkElement)parts["OrbAsk"];
+  white=(FrameworkElement)parts["OrbWhiteDot"];black=(FrameworkElement)parts["OrbBlackDot"];led=(FrameworkElement)parts["OrbLed"];check=(FrameworkElement)parts["OrbCheck"];ask=(FrameworkElement)parts["OrbAsk"];led.RenderTransform=statusMove;((Shape)led).Fill=statusBrush;
   var group=new TransformGroup();group.Children.Add(scale);group.Children.Add(translate);body.RenderTransform=group;face.RenderTransform=rotation;
-  for(int i=0;i<particles.Length;i++){particles[i]=new Ellipse{Width=3.2,Height=3.2,Fill=Brushes.DodgerBlue,Visibility=Visibility.Collapsed};root.Children.Add(particles[i]);}
+  for(int i=0;i<particles.Length;i++){particles[i]=new Ellipse{Width=3.2,Height=3.2,Fill=Brushes.DodgerBlue,Visibility=Visibility.Collapsed};particleMoves[i]=new TranslateTransform();particles[i].RenderTransform=particleMoves[i];root.Children.Add(particles[i]);}
   arms.Visibility=cup.Visibility=headphone.Visibility=Visibility.Collapsed;root.Children.Add(headphone);root.Children.Add(listeningRing);Canvas.SetLeft(listeningRing,6);Canvas.SetTop(listeningRing,7);listeningRing.Visibility=Visibility.Collapsed;root.Children.Add(arms);root.Children.Add(cup);Canvas.SetLeft(cup,38);Canvas.SetTop(cup,34);Canvas.SetTop(arms,9);Canvas.SetTop(headphone,9);
   headphone.RenderTransform=headphoneMove;root.PreviewMouseLeftButtonDown+=(sender,args)=>PetClicked();
+  BuildRenderedDetails((Canvas)face);
+  // Decode prop textures before the first composition frame, avoiding an animation hitch.
+  BuildWaterBottle();
   active=Catalog.ById["startup_boot"];clipStart=time.Elapsed.TotalSeconds;nextIdleAt=clipStart+8+personality.NextDouble()*8;
   CompositionTarget.Rendering+=Render;
  }
  public void SetState(string value,string text){
   // Open and idle share the same pet state; detector polls must not restart its rest timer.
   if(value=="open")value="idle";
-  string key=value+"|"+(text??"");if(key==stateKey)return;stateKey=key;state=value;action=(text??"").ToLowerInvariant();
+  bool keepWater=active!=null&&active.Id.StartsWith("water_")&&(WaterPriority||(value!="attention"&&value!="error"));
+  Clip waterClip=active;double waterStart=clipStart,waterOverride=overrideUntil;
+  string category=value=="working"?((text??"").ToLowerInvariant().Contains("think")||(text??"").ToLowerInvariant().Contains("reason")?"thinking":(text??"").ToLowerInvariant().Contains("search")||(text??"").ToLowerInvariant().Contains("read")||(text??"").ToLowerInvariant().Contains("inspect")?"search":(text??"").ToLowerInvariant().Contains("command")?"command":"working"):"";string key=value+"|"+category;if(key==stateKey)return;stateKey=key;state=value;action=(text??"").ToLowerInvariant();
   switch(state){
    case "working":baseId=action.Contains("thinking")||action.Contains("reasoning")?ThinkingGestures[personality.Next(ThinkingGestures.Length)]:action.Contains("search")||action.Contains("read")||action.Contains("inspect")?"thinking_search":action.Contains("command")?"working_fast":"working_normal";break;
    case "attention":baseId="waiting_user";break;case "success":baseId="task_complete";break;case "error":baseId="error_failure";break;
@@ -105,11 +118,16 @@ public sealed class OrbyAvatarRenderer : IDisposable {
    case "music":baseId="music_mode";break;case "notification":baseId="notification";break;default:baseId="idle_neutral";break;
   }
   sleeping=false;overrideUntil=0;active=Catalog.ById[baseId];clipStart=time.Elapsed.TotalSeconds;nextIdleAt=clipStart+8+personality.NextDouble()*8;nextThinkingAt=clipStart+10+personality.NextDouble()*8;ClearParticles();
+  if(keepWater){active=waterClip;clipStart=waterStart;overrideUntil=waterOverride;}
  }
  public bool Trigger(string id){return TriggerAt(id,time.Elapsed.TotalSeconds);}
  bool TriggerAt(string id,double now){
   Clip next;if(!Catalog.ById.TryGetValue(id,out next))return false;
-  if(state=="working"||state=="attention"||state=="error"||state=="success"||state=="stopped"||state=="paused"||state=="offline"){if(next.Priority<Catalog.ById[baseId].Priority)return false;}
+  if(!EyeEffects && (id=="star_eyes"||id.StartsWith("eyes_")))return false;
+  bool water=id.StartsWith("water_");
+  if(!water&&active!=null&&active.Id.StartsWith("water_"))return false;
+  if(water&&!WaterPriority&&(state=="attention"||state=="error"))return false;
+  if(!water&&(state=="working"||state=="attention"||state=="error"||state=="success"||state=="stopped"||state=="paused"||state=="offline")){if(next.Priority<Catalog.ById[baseId].Priority)return false;}
   double lastTime;if(cooldowns.TryGetValue(id,out lastTime) && (now-lastTime)*1000<next.Cooldown)return false;
   cooldowns[id]=now;active=next;clipStart=now;overrideUntil=now+Math.Max(0.001,next.Duration/1000.0);ClearParticles();return true;
  }
@@ -117,9 +135,11 @@ public sealed class OrbyAvatarRenderer : IDisposable {
  static void Visible(UIElement element,bool value){var visibility=value?Visibility.Visible:Visibility.Collapsed;if(element.Visibility!=visibility)element.Visibility=visibility;}
  void ClearParticles(){foreach(var particle in particles)Visible(particle,false);Visible(arms,false);Visible(cup,false);Visible(headphone,false);Visible(listeningRing,false);VisibleParticleCount=0;}
  public void Draw(double t){
-  if(active==null)return;double elapsed=Math.Max(0,t-clipStart),duration=Math.Max(0.001,active.Duration/1000.0);
+  if(active==null)return;
+  if(!EyeEffects && (active.Id=="star_eyes"||active.Id.StartsWith("eyes_"))){active=Catalog.ById[baseId];clipStart=t;overrideUntil=0;}
+  double elapsed=Math.Max(0,t-clipStart),duration=Math.Max(0.001,active.Duration/1000.0);
   if(!active.Loop && elapsed>duration && state!="preview"){
-   string next=overrideUntil>0?baseId:active.Exit;
+   string next=(active.Id=="water_progress"||active.Id=="water_skip")?baseId:active.Id.StartsWith("water_")?active.Exit:overrideUntil>0?baseId:active.Exit;
    if(!Catalog.ById.ContainsKey(next))next="idle_neutral";active=Catalog.ById[next];clipStart=t;overrideUntil=0;elapsed=0;duration=Math.Max(0.001,active.Duration/1000.0);
   }
   double p=active.Loop?(elapsed%duration)/duration:Math.Min(1,elapsed/duration);
@@ -139,22 +159,29 @@ public sealed class OrbyAvatarRenderer : IDisposable {
   if(active.Id=="rare_eye_roll"){pose.EyeX=Math.Cos(p*Math.PI*2)*0.6;pose.EyeY=Math.Sin(p*Math.PI*2)*0.4;}
   if(active.Id=="rare_dizzy"){pose.EyeX=Math.Cos(elapsed*Math.PI*5)*0.7;pose.LeftY=Math.Sin(elapsed*Math.PI*5)*0.4;pose.RightY=-pose.LeftY;}
   if(t>=nextBlink && active.Id!="rare_stare" && active.Id!="sleep_afk"){blinkStart=t;nextBlink=t+3.0+0.8*((Frames/17)%5);}
-  double blink=1;if(t-blinkStart<0.18)blink=Catalog.ById["blink_natural"].Channels[0].Value((t-blinkStart)/0.18);
-  if(left.Data!=geometries[0])left.Data=geometries[0];if(right.Data!=geometries[1])right.Data=geometries[1];Visible(left,true);Visible(right,true);Visible(pattern,false);Visible(white,false);Visible(black,false);
+  bool waterHappy=active.Id=="water_sip"||active.Id=="water_progress";
+  double blink=1;if(!waterHappy&&t-blinkStart<0.18)blink=Catalog.ById["blink_natural"].Channels[0].Value((t-blinkStart)/0.18);
+  bool coloredEyes=EyeEffects && (active.Id=="star_eyes"||active.Id.StartsWith("eyes_"));
+  double starMix=coloredEyes?Math.Min(1,Math.Min(elapsed/0.6,(duration-elapsed)/0.6)):0;
+  starMix=Math.Max(0,starMix);starMix=starMix*starMix*(3-2*starMix);
+  Geometry eyeL=waterHappy?happyWaterLeft:geometries[0],eyeR=waterHappy?happyWaterRight:geometries[1];
+  if(starMix>0){if(active.Id=="star_eyes"){eyeL=StarEye(11,18,starMix,t);eyeR=StarEye(24,18,starMix,t);}else{double h=active.Id=="eyes_sleepy"?3.5:5.2;eyeL=new EllipseGeometry(new Point(11,18),3.2+1.2*starMix,h);eyeR=new EllipseGeometry(new Point(24,18),3.2+0.8*starMix,h);pose.EyeX+=Math.Sin(p*Math.PI*2)*0.25;}}
+  if(starMix>0 && active.Id!="star_eyes"){left.Fill=EyeBrush(active.Id,starMix,p,false);right.Fill=EyeBrush(active.Id,starMix,p,true);}else{left.Fill=right.Fill=starMix>0?new SolidColorBrush(Color.FromRgb((byte)(12+45*starMix),(byte)(12+180*starMix),(byte)(14+222*starMix))):Brushes.Black;}
+  if(left.Data!=eyeL)left.Data=eyeL;if(right.Data!=eyeR)right.Data=eyeR;Visible(left,true);Visible(right,true);Visible(pattern,false);Visible(white,false);Visible(black,false);
   lidLeft.ScaleX=lidRight.ScaleX=Math.Max(0.05,pose.EyeWidth);lidLeft.ScaleY=Math.Max(0.02,pose.EyeHeight*pose.LeftHeight*blink);lidRight.ScaleY=Math.Max(0.02,pose.EyeHeight*pose.RightHeight*blink);
   eyeLeftMove.X=eyeRightMove.X=Math.Max(-1,Math.Min(1,pose.EyeX))*4.3;eyeLeftMove.Y=(pose.EyeY+pose.LeftY)*3.6;eyeRightMove.Y=(pose.EyeY+pose.RightY)*3.6;
   rotation.Angle=ReducedMotion?Math.Max(-2,Math.Min(2,pose.Rotation)):pose.Rotation;
   scale.ScaleX=ReducedMotion?1:pose.ScaleX;scale.ScaleY=ReducedMotion?1:pose.ScaleY;
   translate.X=ReducedMotion?Math.Max(-2,Math.Min(2,pose.X)):pose.X;translate.Y=ReducedMotion?Math.Max(-2,Math.Min(2,pose.Y)):pose.Y;body.Opacity=pose.Opacity;
   Brush color=active.Color=="success"?Brushes.MediumSeaGreen:active.Color=="warning"?Brushes.Goldenrod:active.Color=="error"?Brushes.Coral:active.Color=="neutral"?Brushes.LightSlateGray:Brushes.DodgerBlue;
-  double radius=active.Radius*0.78;VisibleParticleCount=ReducedMotion?0:Math.Min(6,active.Count);
+  double radius=active.Radius*0.78;VisibleParticleCount=ReducedMotion||state=="working"||state=="attention"||state=="error"?0:Math.Min(6,active.Count);
   for(int i=0;i<6;i++){
    var particle=particles[i];Visible(particle,i<VisibleParticleCount);if(i>=VisibleParticleCount)continue;
    double a=elapsed*2*Math.PI/Math.Max(0.1,active.Period/1000.0)+i*2*Math.PI/Math.Max(1,active.Count),distance=radius,opacity=1;
    if(active.ParticleMode.Contains("burst")){a=i*2*Math.PI/Math.Max(1,active.Count);distance=radius*Math.Sin(p*Math.PI);opacity=Math.Sin(p*Math.PI);}
    if(active.ParticleMode=="dart_away_then_vanish"){a=-0.5;distance=radius*(0.2+p);opacity=1-p;}
    if(active.ParticleMode=="progressOrbit" && Progress>=0){a=-Math.PI/2+2*Math.PI*Math.Max(0,Math.Min(1,Progress));}
-   particle.Fill=color;particle.Opacity=opacity;Canvas.SetLeft(particle,25.4+Math.Cos(a)*distance);Canvas.SetTop(particle,26.4+Math.Sin(a)*distance);
+   particle.Fill=color;particle.Opacity=opacity;particleMoves[i].X=25.4+Math.Cos(a)*distance;particleMoves[i].Y=26.4+Math.Sin(a)*distance;
    if(active.Id=="orbiting_dot_game"||active.Id=="catch_dot"){eyeLeftMove.X=eyeRightMove.X=Math.Cos(a)*3;eyeLeftMove.Y=eyeRightMove.Y=Math.Sin(a)*2;}
   }
   Visible(arms,active.Indicator=="optionalArms");if(arms.Visibility==Visibility.Visible){arms.Data=active.Pose=="wave"?armWave:armPeek;arms.RenderTransform=rotation;arms.Opacity=Math.Sin(p*Math.PI);}
@@ -163,17 +190,47 @@ public sealed class OrbyAvatarRenderer : IDisposable {
   headphoneMove.X=ReducedMotion?0:pose.X;headphoneMove.Y=ReducedMotion?0:pose.Y;
   check.Opacity=state=="success"?1:0;ask.Opacity=state=="attention"?1:0;
   bool indicator=active.Indicator.Length>0 && active.Indicator!="optionalArms" && active.Indicator!="prop";
-  led.Opacity=indicator||state=="working"||state=="attention"||state=="error"?1:0;((Shape)led).Fill=state=="error"?Brushes.Coral:state=="attention"?Brushes.Goldenrod:color;
+  Color target=state=="working"?Colors.DodgerBlue:state=="attention"?Colors.Goldenrod:state=="error"?Colors.Coral:state=="success"?Colors.MediumSeaGreen:StatusConnected?Color.FromRgb(53,215,150):Colors.SlateGray;
+  double dt=statusFrame<0?1:Math.Max(0,Math.Min(.1,t-statusFrame));statusFrame=t;double blend=1-Math.Exp(-dt/0.12);
+  Color old=statusBrush.Color;statusBrush.Color=Color.FromRgb((byte)(old.R+(target.R-old.R)*blend),(byte)(old.G+(target.G-old.G)*blend),(byte)(old.B+(target.B-old.B)*blend));
+  double sx=0,sy=-5;
+  if(!ReducedMotion){if(state=="working"){double angle=t*2.4-2.4;sx=27+Math.Cos(angle)*21-10.25;sy=28+Math.Sin(angle)*21-18.75;}else{sy+=Math.Sin(t*2.2)*0.65;}}
+  statusMove.X+=(sx-statusMove.X)*blend;statusMove.Y+=(sy-statusMove.Y)*blend;
+  led.Opacity=(state=="attention"||state=="error")&&!ReducedMotion?.8+.2*Math.Sin(t*3):1;
+
+  DrawWater(elapsed,p);
+  if(!ShowStatusDot)led.Opacity=0;
+  if(WaterPriority){check.Opacity=ask.Opacity=led.Opacity=0;}
  }
  void Render(object sender,EventArgs args){var rendering=(RenderingEventArgs)args;if(rendering.RenderingTime==last)return;last=rendering.RenderingTime;
-  if(SyncWith!=null){DrawSyncedFrame();return;}
-  double now=time.Elapsed.TotalSeconds;if(prev>0){double gap=(now-prev)*1000;MaxFrameGapMs=Math.Max(MaxFrameGapMs,gap);gaps[gapCount%gaps.Length]=gap;gapCount++;}else started=now;prev=now;Frames++;
-  if(now-inputPoll>=0.1){inputPoll=now;Pointer cursor;
+  if(Suspended||!root.IsVisible){prev=0;return;}if(SyncWith!=null){DrawSyncedFrame();return;}
+  double now=time.Elapsed.TotalSeconds;if(prev>0){measuredTime+=now-prev;double gap=(now-prev)*1000;MaxFrameGapMs=Math.Max(MaxFrameGapMs,gap);gaps[gapCount%gaps.Length]=gap;gapCount++;}else started=now;prev=now;Frames++;
+  Pointer cursor;
    if(GetCursorPos(out cursor) && PresentationSource.FromVisual(root)!=null){var center=root.PointToScreen(new Point(27,28));CursorX=Math.Max(-1,Math.Min(1,(cursor.X-center.X)/140));CursorY=Math.Max(-1,Math.Min(1,(cursor.Y-center.Y)/140));}
-   var input=new InputStamp{Size=8};bool afk=GetLastInputInfo(ref input) && unchecked((uint)Environment.TickCount-input.Tick)>300000;
+  if(now-inputPoll>=0.1){inputPoll=now;var input=new InputStamp{Size=8};bool afk=GetLastInputInfo(ref input) && unchecked((uint)Environment.TickCount-input.Tick)>300000;
    AdvanceIdle(now,afk);AdvanceThinking(now);
   }
   Draw(now);
+ }
+ static Brush EyeBrush(string id,double mix,double p,bool rightEye){
+  Color outer=Color.FromRgb(115,91,255),inner=Color.FromRgb(67,247,135);
+  if(id=="eyes_ocean"){outer=Color.FromRgb(28,153,239);inner=Color.FromRgb(204,245,255);}
+  if(id=="eyes_lilac"){outer=Color.FromRgb(208,162,232);inner=Color.FromRgb(89,57,227);}
+  if(id=="eyes_sunset"){outer=Color.FromRgb(244,125,58);inner=Color.FromRgb(255,223,124);}
+  if(id=="eyes_sleepy"){outer=Color.FromRgb(81,125,165);inner=Color.FromRgb(153,203,221);}
+  outer=Color.FromRgb((byte)(outer.R*mix),(byte)(outer.G*mix),(byte)(outer.B*mix));inner=Color.FromRgb((byte)(inner.R*mix),(byte)(inner.G*mix),(byte)(inner.B*mix));
+  var group=new DrawingGroup();group.Children.Add(new GeometryDrawing(new SolidColorBrush(outer),null,new RectangleGeometry(new Rect(0,0,1,1))));
+  double x=0.5+0.13*Math.Sin(p*Math.PI*2)+(rightEye?-0.04:0.04);
+  group.Children.Add(new GeometryDrawing(new SolidColorBrush(inner),null,new EllipseGeometry(new Point(x,0.62),0.21,0.43)));
+  var brush=new DrawingBrush(group){Stretch=Stretch.Fill};brush.Freeze();return brush;
+ }
+ static Geometry StarEye(double cx,double cy,double mix,double t){
+  var g=new StreamGeometry();using(var c=g.Open()){
+   for(int i=0;i<10;i++){double a=-Math.PI/2+i*Math.PI/5;double r=(i%2==0?5.0:2.3)*(1+0.025*Math.Sin(t*4));
+    double x=cx+Math.Cos(a)*(3.2*(1-mix)+r*mix),y=cy+Math.Sin(a)*(5.0*(1-mix)+r*mix);
+    var pt=new Point(x,y);if(i==0)c.BeginFigure(pt,true,true);else c.LineTo(pt,true,false);
+   }
+  }g.Freeze();return g;
  }
  // One brief gesture followed by a randomized rest. Never impersonates a task state.
  public void AdvanceIdle(double now,bool afk){
@@ -181,6 +238,7 @@ public sealed class OrbyAvatarRenderer : IDisposable {
   if(afk && !sleeping){sleeping=true;active=Catalog.ById["sleep_afk"];clipStart=now;overrideUntil=0;ClearParticles();return;}
   if(!afk && sleeping){sleeping=false;active=Catalog.ById["wake_up"];clipStart=now;overrideUntil=0;nextIdleAt=now+18+personality.NextDouble()*20;return;}
   if(sleeping || ReducedMotion || active.Id!="idle_neutral" || now<nextIdleAt)return;
+  if(now>=nextStarAt && EyeEffects && !WaterPriority){string style;do{style=EyeStyles[personality.Next(EyeStyles.Length)];}while(style==lastEyeStyle);if(TriggerAt(style,now)){lastEyeStyle=style;nextStarAt=now+240+personality.NextDouble()*240;nextIdleAt=now+25;return;}}
   int first=personality.Next(IdleGestures.Length);
   for(int i=0;i<IdleGestures.Length;i++){
    string id=IdleGestures[(first+i)%IdleGestures.Length];
@@ -190,7 +248,7 @@ public sealed class OrbyAvatarRenderer : IDisposable {
   nextIdleAt=now+18+personality.NextDouble()*20;
  }
  public double TimeSeconds{get{return time.Elapsed.TotalSeconds;}}
- public double ObservedFps{get{return (Frames-1)/Math.Max(0.001,time.Elapsed.TotalSeconds-started);}}
+ public double ObservedFps{get{return gapCount/Math.Max(0.001,measuredTime);}}
  public double P95FrameMs{get{int n=Math.Min(gapCount,gaps.Length);if(n==0)return 0;var copy=new double[n];Array.Copy(gaps,copy,n);Array.Sort(copy);return copy[(int)((n-1)*0.95)];}}
  public void Dispose(){CompositionTarget.Rendering-=Render;}
 }
@@ -198,5 +256,8 @@ public static class OrbyDisplay {
  [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern bool EnumDisplaySettings(string name,int mode,IntPtr settings);
  public static int RefreshHz(string device){IntPtr ptr=Marshal.AllocHGlobal(220);try{Marshal.Copy(new byte[220],0,ptr,220);Marshal.WriteInt16(ptr,68,220);if(!EnumDisplaySettings(device,-1,ptr))return 0;return Marshal.ReadInt32(ptr,184);}finally{Marshal.FreeHGlobal(ptr);}}
 }
+
+
+
 
 

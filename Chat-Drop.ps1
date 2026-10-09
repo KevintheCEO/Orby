@@ -1,4 +1,4 @@
-$script:dropFiles=@()
+﻿$script:dropFiles=@()
 $script:dropLeaveTimer=New-Object Windows.Threading.DispatcherTimer
 $script:dropLeaveTimer.Interval=[timespan]::FromMilliseconds(350)
 $script:dropLeaveTimer.Add_Tick({$script:dropLeaveTimer.Stop();if(-not $script:dropFiles.Count -and -not $script:dropHandle -and -not $window.IsMouseOver){$script:dropBusy=$false;Update-OrbyEventCard}})
@@ -31,6 +31,7 @@ $window.AddHandler([Windows.DragDrop]::PreviewDropEvent,[Windows.DragEventHandle
  }
 },$true)
 function Submit-OrbyDropPrompt {
+ if($script:orbySettings.PrimaryProvider -and $script:orbySettings.PrimaryProvider -ne 'chatgpt'){Open-OrbyProvider;return}
  if($script:dropHandle){return}
  $prompt=$script:dropControls.DropPrompt.Text.Trim()
  if(-not $prompt -or -not $script:dropFiles.Count){$script:dropControls.DropPrompt.ToolTip='Type your prompt first';return}

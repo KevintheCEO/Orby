@@ -1,3 +1,4 @@
+if(-not ('OrbyLogDiscovery' -as [type])){Add-Type -Path (Join-Path $PSScriptRoot 'Log-Discovery.cs')}
 # PowerShell 5.1. No UI dependencies: replayable state machine.
 $script:eventFloor = [datetime]::UtcNow
 $script:eventClock = $script:eventFloor
@@ -125,17 +126,15 @@ function Process-ChatGptLogLine {
 
 function Update-ChatGptLogWatcher {
     $now = [datetime]::UtcNow
-    if ($now -gt $script:chatLogLastSearchAt.AddSeconds(3)) {
+    if($script:logDiscoveryTask -and $script:logDiscoveryTask.IsCompleted){
+        if(-not $script:logDiscoveryTask.IsFaulted){foreach($file in $script:logDiscoveryTask.Result){
+            if(-not $script:logReaders.ContainsKey($file.Path)){$script:logReaders[$file.Path]=@{Cursor=0L;Carry='';InitialLength=$file.Length;Decoder=[Text.Encoding]::UTF8.GetDecoder()}}
+        }}
+        $script:logDiscoveryTask=$null
+    }
+    if(-not $script:logDiscoveryTask -and $now -gt $script:chatLogLastSearchAt.AddSeconds(3)){
         $script:chatLogLastSearchAt=$now
-        foreach ($root in $script:chatLogRoots) {
-            foreach ($file in @(Get-ChildItem -LiteralPath $root -File -Recurse -Filter '*.log' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -gt $script:eventFloor.AddMinutes(-10) })) {
-                if (-not $script:logReaders.ContainsKey($file.FullName)) {
-                    # Never replay a newly discovered old file; timestamp floor
-                    # rejects its historical records, including after rotation.
-                    $script:logReaders[$file.FullName]=@{Cursor=0L; Carry=''; InitialLength=$file.Length; Decoder=[Text.Encoding]::UTF8.GetDecoder()}
-                }
-            }
-        }
+        $script:logDiscoveryTask=[OrbyLogDiscovery]::Poll([string[]]$script:chatLogRoots,$script:eventFloor.AddMinutes(-10))
     }
     $batch=New-Object System.Collections.Generic.List[object]
     foreach ($path in @($script:logReaders.Keys | Sort-Object)) {
@@ -215,3 +214,4 @@ function Get-WatchdogUiResult {
         return 'absent'
     } catch { return 'unknown' }
 }
+

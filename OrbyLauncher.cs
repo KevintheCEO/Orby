@@ -24,11 +24,11 @@ internal static class OrbyLauncher
         var start = new ProcessStartInfo
         {
             FileName = powershell,
-            Arguments = "-NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -STA -File \"" + script + "\"",
+            Arguments = "-NoLogo -NoProfile -STA -File \"" + script + "\"",
             WorkingDirectory = folder,
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        Process.Start(start);
+        try { Process.Start(start); } catch (Exception error) { MessageBox.Show(error.Message, "Orby launch failed", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 }

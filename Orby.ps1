@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$DebugMode,
     [string]$DataDirectory = '',
     [string]$PreviewDirectory = '',
@@ -6,6 +6,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Add-Type -Path (Join-Path $PSScriptRoot 'Dpi-Boot.cs')
+[OrbyDpiBoot]::Enable()
 
 $logDir = Join-Path $env:LOCALAPPDATA 'Orby'
 if ($DataDirectory) { $logDir = $DataDirectory }
@@ -34,7 +36,7 @@ function Fail-Orbit {
     exit 1
 }
 
-Write-OrbitLog '===== Orby v5.3 pet personality and music player starting ====='
+Write-OrbitLog '===== Orby v8.5 display scaling starting ====='
 Write-OrbitLog "PowerShell $($PSVersionTable.PSVersion) / $([Environment]::OSVersion.VersionString)"
 
 try {
@@ -93,7 +95,7 @@ public static class OrbitNative {
     Write-OrbitLog "Native helper warning: $($_.Exception.Message)"
 }
 
-Add-Type -Path (Join-Path $PSScriptRoot 'Liquid-Surface.cs') -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
+Add-Type -Path @((Join-Path $PSScriptRoot 'Liquid-Surface.cs'),(Join-Path $PSScriptRoot 'Monitor-Layout.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
 $xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:;assembly=LIQUID_ASSEMBLY"
@@ -106,7 +108,7 @@ $xaml = @'
         ShowInTaskbar="False"
         Topmost="True"
         Focusable="False"
-        SnapsToDevicePixels="True">
+        SnapsToDevicePixels="True" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="Grayscale">
     <Grid x:Name="Root" Background="Transparent">
         <local:OrbyLiquidSurface x:Name="Notch" Width="620" Height="374" VerticalAlignment="Top" HorizontalAlignment="Center">
             <Grid Margin="12,0,12,0">
@@ -124,9 +126,9 @@ $xaml = @'
 
                     <Canvas Grid.Column="0" x:Name="PetCanvas" Width="54" Height="38" VerticalAlignment="Center"/>
 
-                    <TextBlock x:Name="CompactTaskTitle" Grid.Column="1" Text="No active task" Foreground="#F1F2F4" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="CompactTaskTitle" Grid.Column="1" Text="No active task" Foreground="#F1F2F4" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" TextTrimming="CharacterEllipsis"/>
                     <StackPanel Grid.Column="1" Opacity="0" VerticalAlignment="Center" Margin="0,0,8,0">
-                        <TextBlock x:Name="StateText" Text="Orby" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="StateText" Text="Orby" Foreground="White" FontSize="13" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="DetailText" Text="Waiting for ChatGPT" Foreground="#A9FFFFFF" FontSize="10" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
 
@@ -138,7 +140,7 @@ $xaml = @'
                     </Grid>
                 </Grid>
 
-                <Grid x:Name="ExpandedArea" Height="180" VerticalAlignment="Top" Grid.Row="1" Opacity="0" Visibility="Collapsed"/>
+                <Grid x:Name="ExpandedArea" Height="180" VerticalAlignment="Top" Grid.Row="0" Grid.RowSpan="2" Margin="0,8,0,0" Opacity="0" Visibility="Collapsed"/>
             </Grid>
         </local:OrbyLiquidSurface>
         <Button x:Name="AlbumCoverButton" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="230,8,0,0" Visibility="Collapsed" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand">
@@ -158,6 +160,7 @@ try {
 
 $notch = $window.FindName('Notch')
 $expandedArea = $window.FindName('ExpandedArea')
+. (Join-Path $PSScriptRoot 'Panel-Layers.ps1')
 $stateText = $window.FindName('StateText')
 $detailText = $window.FindName('DetailText')
 $statusDot = $window.FindName('StatusDot')
@@ -230,9 +233,7 @@ function Set-Brush {
 
 function Position-Orbit {
     try {
-        $screenWidth = [System.Windows.SystemParameters]::PrimaryScreenWidth
-        $window.Left = [Math]::Round(($screenWidth - $window.Width) / 2)
-        $window.Top = 0
+        [OrbyMonitorLayout]::Position($window)
     } catch {
         Write-OrbitLog "Position warning: $($_.Exception.Message)"
         $window.Left = 0
@@ -245,20 +246,24 @@ function Position-Orbit {
 
 function Set-OrbitExpanded {
     param([bool]$Expand)
+    if($script:fullscreenHidden){return}
     if(-not $Expand -and $script:musicPopup -and $script:musicPopup.IsOpen){return}
-    if(-not $Expand -and $script:orbyEventMode){return}
+    if($script:waterPriority){$Expand=$false}
+    if(-not $Expand -and $script:orbyEventMode -and -not $script:waterPriority){return}
     if ($script:expanded -eq $Expand) { return }
-    if(-not $Expand -and $script:referenceControls -and $script:referenceControls.RefMusicPage -and $script:referenceControls.RefMusicPage.Visibility -eq 'Visible') {
+    if(-not $Expand -and $script:referenceControls) {
         Set-OrbyHomePage 'home'
     }
     $script:expanded = $Expand
+    if($script:avatarRenderer){$script:avatarRenderer.Suspended=$Expand}
+    foreach($mini in $script:miniOrbys){$mini.Renderer.Suspended=$Expand}
     Set-OrbyAlbumPlacement $Expand
 
     if($script:avatarRenderer){[void]$script:avatarRenderer.Trigger($(if($Expand){'notch_open'}else{'notch_close'}))}
     if($script:referenceRenderer){[void]$script:referenceRenderer.Trigger($(if($Expand){'notch_open'}else{'notch_close'}))}
     $expandedArea.Visibility='Visible'
-    [OrbyMotion.Driver]::Move($notch,[OrbyLiquidSurface]::MorphProperty,$(if($Expand){if($script:orbyEventMode -and $script:orbyEventMode -ne 'drop'){0.62}else{1.0}}else{0.0}),$Expand)
-    Invoke-OrbyMotion ($window.FindName('CompactHeader')) ([Windows.UIElement]::OpacityProperty) $(if($Expand){0}else{1}) 0.14
+    [OrbyMotion.Driver]::Move($notch,[OrbyLiquidSurface]::MorphProperty,$(if($Expand){if($script:orbyEventMode -and $script:orbyEventMode -ne 'drop'){1.0}else{1.0}}else{0.0}),$Expand)
+    Set-OrbyCompactLayer ($window.FindName('CompactHeader')) $Expand
     Invoke-OrbyMotion $expandedArea ([Windows.UIElement]::OpacityProperty) $(if($Expand){1}else{0}) 0.16
 
 }
@@ -659,33 +664,8 @@ function Get-ChatGptSnapshot {
         $snapshot.Activity = 'Generating response'
     }
 
-    # If a run stops because ChatGPT is waiting on the user, the newest
-    # accessible text commonly contains a direct question or an instruction such
-    # as "please choose" / "please confirm". We only *promote* this candidate on
-    # the working -> stopped transition below, so old questions in chat history do
-    # not keep Orbit amber forever.
-    $questionCandidate = ''
-    $startIndex = [Math]::Max(0, $names.Count - 90)
-    for ($i = $names.Count - 1; $i -ge $startIndex; $i--) {
-        $candidate = ([string]$names[$i]).Trim()
-        if ($candidate.Length -lt 4 -or $candidate.Length -gt 320) { continue }
-        if ($candidate -match '(?i)^working for\s+\d+|^thinking$|^reasoning$|^working$|^work with chatgpt$|^search chats$|^new chat$') { continue }
-        if ($candidate -match '(?i)(needs? your (?:input|attention)|waiting for (?:your )?(?:input|response)|please\s+(?:choose|select|confirm|provide|upload|sign in|answer|tell me)|(?:which|what|where|when|who|how|would you|do you|can you|could you|will you)\b.{0,260}\?$|\?$)') {
-            $questionCandidate = $candidate
-            break
-        }
-    }
-
-    if ([string]::IsNullOrWhiteSpace($questionCandidate)) {
-        foreach ($item in $buttonItems) {
-            $bn = ([string]$item.Name).Trim()
-            if ($bn -match '(?i)^(confirm|approve|allow|continue|choose|select|sign in|upload|provide access)$') {
-                $questionCandidate = "Action requested: $bn"
-                break
-            }
-        }
-    }
-    $snapshot.InputRequest = $questionCandidate
+    # Require blocking controls; scheduler reminders and ordinary prose are content.
+    $snapshot.InputRequest = Get-OrbyUiInputRequest @($names) @($buttonItems)
 
     if ($DebugMode -and $snapshot.Evidence -ne $script:lastEvidence) {
         $script:lastEvidence = $snapshot.Evidence
@@ -894,6 +874,7 @@ function Update-ChatLogActivityFromLine {
 . (Join-Path $PSScriptRoot 'Desktop-UI.ps1')
 $script:desktopPanel=New-OrbyPanel
 . (Join-Path $PSScriptRoot 'Animation-Picker.ps1')
+. (Join-Path $PSScriptRoot 'Account-Usage.ps1')
 . (Join-Path $PSScriptRoot 'Reference-Home.ps1')
 [void]$expandedArea.Children.Add((New-OrbyHome))
 . (Join-Path $PSScriptRoot 'Event-Cards.ps1')
@@ -911,7 +892,7 @@ if ($PreviewDirectory) {
         $window.Content.Measure((New-Object Windows.Size 640,384))
         $window.Content.Arrange((New-Object Windows.Rect 0,0,640,384))
         $window.Content.UpdateLayout()
-        $bitmap=New-Object Windows.Media.Imaging.RenderTargetBitmap 640,384,96,96,([Windows.Media.PixelFormats]::Pbgra32)
+        $bitmap=New-Object Windows.Media.Imaging.RenderTargetBitmap 640,194,96,96,([Windows.Media.PixelFormats]::Pbgra32)
         $bitmap.Render($window.Content)
         $encoder=New-Object Windows.Media.Imaging.PngBitmapEncoder
         $encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
@@ -932,6 +913,7 @@ if ($PreviewDirectory) {
 
 function Set-PetState {
     param([string]$State)
+    if($script:orbySettings.PrimaryProvider -and $script:orbySettings.PrimaryProvider -ne 'chatgpt'){return}
     if($script:greetingActive -and $State -in @('idle','open')){return}
     if($State -ne $script:petState -and $State -in @('success','attention','error')){Invoke-OrbySound $State}
     $script:petState = $State
@@ -989,6 +971,7 @@ function Set-OrbitState {
 }
 
 function Focus-ChatGpt {
+    if($script:orbySettings.PrimaryProvider -and $script:orbySettings.PrimaryProvider -ne 'chatgpt'){Open-OrbyProvider;return}
     try {
         $el = Find-ChatGptWindow
         if ($null -eq $el) {
@@ -1029,33 +1012,44 @@ function Test-OrbyPointerInside {
 $script:hoverExitTimer=New-Object Windows.Threading.DispatcherTimer
 $script:hoverExitTimer.Interval=[timespan]::FromMilliseconds(90)
 $script:hoverExitTimer.Add_Tick({$script:hoverExitTimer.Stop();if(-not (Test-OrbyPointerInside)){Set-OrbitExpanded $false}})
-$window.Add_MouseEnter({$script:hoverExitTimer.Stop();Set-OrbitExpanded $true})
+$window.Add_MouseEnter({if($script:fullscreenHidden){return};$script:hoverExitTimer.Stop();if(-not $script:waterDay -or -not (Get-OrbyWaterTitle)){Set-OrbitExpanded $true}})
 $window.Add_MouseLeave({$script:hoverExitTimer.Start()})
-$window.Add_MouseDoubleClick({ if(-not $script:albumCoverButton.IsMouseOver){Focus-ChatGpt} })
+$window.Add_MouseDoubleClick({ if(-not $script:albumCoverButton.IsMouseOver -and (-not $script:waterDay -or -not (Get-OrbyWaterTitle))){Focus-ChatGpt} })
 
 $window.Add_SourceInitialized({
     try {
         Position-Orbit
         $notch.Attach($window)
+        [OrbyMonitorLayout]::Attach($window,$notch)
         Write-OrbitLog "UI ready at Left=$($window.Left), Top=0"
     } catch {}
 })
 
 # Render-paced native animation; no PowerShell callbacks or geometry parsing per frame.
-Add-Type -Path @((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $PSScriptRoot 'Animation-Catalog.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
+Add-Type -Path @((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $PSScriptRoot 'Hydration-Avatar.cs'),(Join-Path $PSScriptRoot 'Rendered-Assets.cs'),(Join-Path $PSScriptRoot 'Hydration-Model.cs'),(Join-Path $PSScriptRoot 'Animation-Catalog.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
 $window.Width=640;$window.Height=384
 $script:avatarRenderer=New-Object OrbyAvatarRenderer ($script:orbParts)
 $script:referenceRenderer=New-Object OrbyAvatarRenderer ($script:referenceOrb)
+. (Join-Path $PSScriptRoot 'Hydration.ps1')
+Initialize-OrbyWater
 Start-OrbyGreeting
 . (Join-Path $PSScriptRoot 'Task-Avatars.ps1')
 Initialize-OrbyTaskPack
 . (Join-Path $PSScriptRoot 'Mini-Orbys.ps1')
 Initialize-OrbyMinis
-$window.Add_Closed({Stop-OrbyMinis})
+. (Join-Path $PSScriptRoot 'Home-Buddies.ps1')
+Initialize-OrbyHomeBuddies
+. (Join-Path $PSScriptRoot 'Ambient-Motion.ps1')
+Initialize-OrbyAmbientMotion
+. (Join-Path $PSScriptRoot 'Fullscreen-Guard.ps1')
+. (Join-Path $PSScriptRoot 'Providers.ps1')
+Initialize-OrbyAccountUsage
+$window.Add_Closed({Stop-OrbyAmbientMotion;Stop-OrbyHomeBuddies;Stop-OrbyMinis})
 $window.Add_Closed({Stop-OrbyTaskPack})
-$script:displayHz=[OrbyDisplay]::RefreshHz([Windows.Forms.Screen]::PrimaryScreen.DeviceName)
+$script:displayHz=[OrbyDisplay]::RefreshHz(([Windows.Forms.Screen]::FromHandle([Windows.Interop.WindowInteropHelper]::new($window).Handle)).DeviceName)
+[OrbyRefreshClock]::Configure($script:displayHz)
 Write-OrbitLog ('DISPLAY refreshHz='+$script:displayHz+' frameLoop=CompositionTarget.Rendering tier='+([Windows.Media.RenderCapability]::Tier -shr 16))
-$window.Add_Closed({if($script:greetingTimer){$script:greetingTimer.Stop()};if($script:greetingFinishTimer){$script:greetingFinishTimer.Stop()};Write-OrbitLog ('RENDER observedFps='+[math]::Round($script:avatarRenderer.ObservedFps,1)+' frames='+$script:avatarRenderer.Frames+' p95FrameMs='+[math]::Round($script:avatarRenderer.P95FrameMs,1)+' maxGapMs='+[math]::Round($script:avatarRenderer.MaxFrameGapMs,1));$script:avatarRenderer.Dispose();$script:referenceRenderer.Dispose();if($script:toolsWindow){$script:toolsWindow.Close()};if($script:animationWindow){$script:animationWindow.Close()}})
+$window.Add_Closed({if($script:greetingTimer){$script:greetingTimer.Stop()};if($script:greetingFinishTimer){$script:greetingFinishTimer.Stop()};Write-OrbitLog ('RENDER observedFps='+[math]::Round($script:avatarRenderer.ObservedFps,1)+' frames='+$script:avatarRenderer.Frames+' p95FrameMs='+[math]::Round($script:avatarRenderer.P95FrameMs,1)+' maxGapMs='+[math]::Round($script:avatarRenderer.MaxFrameGapMs,1));[OrbyRefreshClock]::Stop();$script:avatarRenderer.Dispose();$script:referenceRenderer.Dispose();if($script:toolsWindow){$script:toolsWindow.Close()};if($script:animationWindow){$script:animationWindow.Close()}})
 
 if($PerformanceCheck){
  $script:perfWatch=[Diagnostics.Stopwatch]::StartNew();$script:perfPhase=0
@@ -1065,15 +1059,21 @@ if($PerformanceCheck){
   $script:perfPhase++
   if($script:perfPhase -ge 10){$script:perfTimer.Stop();$window.Close();return}
   Set-OrbitExpanded (($script:perfPhase%2) -eq 1)
+  if($script:perfPhase -in @(1,5)){Set-OrbyHomePage 'agents'}
+  if($script:perfPhase -eq 7){Set-OrbyHomePage 'music'}
  })
  $window.Add_ContentRendered({$script:perfTimer.Start()})
 }
 
-$scanTimer = New-Object Windows.Threading.DispatcherTimer
+. (Join-Path $PSScriptRoot 'UI-Input-Classification.ps1')
+. (Join-Path $PSScriptRoot 'UI-Scan.ps1')
+$scanTimer = New-Object Windows.Threading.DispatcherTimer ([Windows.Threading.DispatcherPriority]::Background)
 $scanTimer.Interval = [TimeSpan]::FromMilliseconds(900)
-$scanTimer.Add_Tick({
+$scanTick = {
     try {
         $script:scanCounter++
+        $scanWatch=[Diagnostics.Stopwatch]::StartNew()
+        $script:avatarRenderer.EyeEffects=$script:referenceRenderer.EyeEffects=[bool]$script:orbySettings.EyeEffects
         $script:avatarRenderer.ReducedMotion=$script:referenceRenderer.ReducedMotion=([bool]$script:orbySettings.ReducedMotion -or -not [Windows.SystemParameters]::ClientAreaAnimation)
         Update-OrbyShelf
         Update-OrbyLocal
@@ -1082,7 +1082,6 @@ $scanTimer.Add_Tick({
         $musicPlaying=[bool]($script:orbySettings.Music -and (($script:orbyShared.SpotifyMedia -and $script:orbyShared.SpotifyMedia.Playing) -or ($script:orbyShared.Media -and $script:orbyShared.Media.Playing)))
         if($script:avatarRenderer){$script:avatarRenderer.MusicPlaying=$musicPlaying}
         if($script:referenceRenderer){$script:referenceRenderer.MusicPlaying=$musicPlaying}
-
         Sync-OfficialTaskFeed
         if ($script:orbySettings.Tasks -and $script:chatLogState -in @('success','stopped','error')) {
             $taskKey=$script:chatLogActiveConversation+'|'+$script:chatLogActiveTurn+'|'+$script:chatLogState
@@ -1098,37 +1097,19 @@ $scanTimer.Add_Tick({
             Update-LocalTaskEvidence
             Normalize-TransientLogState
         }
-
-        $chat=$null
-        if(-not $script:petFeedAvailable -and -not $script:feedPollTask -and $script:scanCounter%6 -eq 0){$chat=Find-ChatGptWindow}
+        $ui=$script:uiScanShared.Latest
+        $uiFresh=$ui -and ([datetime]::UtcNow-$ui.At).TotalSeconds -lt 12
+        $chat=if($uiFresh){$ui.Chat}else{$null}
         $detected=($null -ne $chat) -or $script:petFeedAvailable
-        $title = ''
-        $snapshot = $null
-
-        if ($null -ne $chat) {
-            try { $title = [string]$chat.Current.Name } catch {}
-            $snapshot = Get-ChatGptSnapshot $chat
-        } else {
-            $snapshot = [pscustomobject]@{
-                Working = $false
-                Failure = $false
-                FailureText = ''
-                InputRequest = ''
-                Stopped = $false
-                StoppedText = ''
-                Mode = 'CHAT'
-                Activity = ''
-                Elapsed = ''
-                Evidence = ''
-            }
-        }
-
+        $script:chatConnectionPresent=[bool]($uiFresh -and $ui.Connected)
+        $title=if($uiFresh){$ui.Title}else{''}
+        $snapshot=if($uiFresh){$ui.Snapshot}else{[pscustomobject]@{Working=$false;Failure=$false;FailureText='';InputRequest='';Stopped=$false;StoppedText='';Mode='CHAT';Activity='';Elapsed='';Evidence=''}}
         # Regular ChatGPT uses a separate UI tracker. Work/Codex feed state
         # cannot suppress these visible normal-chat transitions.
         $normalChatActive = Update-OrbyNormalChatTracker $chat $snapshot
         if($normalChatActive){Show-OrbyNormalChatState $snapshot}
 
-        if (-not $script:petFeedAvailable -and $script:chatLogState -eq 'working' -and ([datetime]::UtcNow - $script:lastActiveActivity).TotalSeconds -ge $script:watchdogSeconds) { Invoke-ChatWatchdog (Get-WatchdogUiResult $chat) }
+        if (-not $script:petFeedAvailable -and $script:chatLogState -eq 'working' -and ([datetime]::UtcNow - $script:lastActiveActivity).TotalSeconds -ge $script:watchdogSeconds) { Invoke-ChatWatchdog $(if($uiFresh){$ui.Watchdog}else{'unknown'}) }
 
         # Only treat a stop/pause label as current when it newly appears or
         # changes. Historical "You stopped after ..." text can remain visible in
@@ -1201,7 +1182,7 @@ $scanTimer.Add_Tick({
 
         # Notification scanning is slower, so only do it every ~2.7 seconds.
         if (($script:scanCounter % 3) -eq 0) {
-            $note = Get-LiveChatGptNotification $chat
+            $note = if($uiFresh){$ui.Notification}else{$null}
             if (-not [string]::IsNullOrWhiteSpace($note)) {
                 $sig = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($note))
                 if ($sig -ne $script:lastNotificationSignature) {
@@ -1214,6 +1195,8 @@ $scanTimer.Add_Tick({
 
         $now = Get-Date
 
+        $desktopStatus=if($normalChatActive){$null}else{Get-OrbyStatus}
+        if(-not $desktopStatus){
         # PRIMARY: exact local log states used by the user's previous working pet.
         # FALLBACK: Windows UI Automation for normal chat/open-window visibility.
         if (-not $normalChatActive -and $script:chatLogState -eq 'error') {
@@ -1269,19 +1252,21 @@ $scanTimer.Add_Tick({
             $idleBody = if ($script:chatLogRoots.Count -gt 0) { 'Local ChatGPT/Codex log folders were found. Orbit is waiting for a turn to start.' } else { 'No ChatGPT window or known local log folder is currently visible.' }
             Set-OrbitState 'idle' 'Orbit' 'Waiting for ChatGPT' 'IDLE' '#727272' 'ChatGPT status' $idleBody 'CHAT' $false 'idle'
         }
-        $desktopStatus=Get-OrbyStatus
+        }
         if ($desktopStatus) {
             Set-OrbitState ('orby-'+$desktopStatus.Tiny) $desktopStatus.Title $desktopStatus.Detail $desktopStatus.Tiny $desktopStatus.Color 'Orby connections' $desktopStatus.Detail 'DESKTOP' ($desktopStatus.Pet -in @('working','music')) $desktopStatus.Pet
         }
         Update-OrbyEventCard
         Update-OrbyCompactTask
         Update-OrbyTaskPack
+        Update-OrbyProviderState
         if ($script:expanded) { Update-OrbyHome };if($script:toolsWindow -and $script:toolsWindow.IsVisible){Update-OrbyPanel}
         if($script:scanCounter%12 -eq 0){
-            $currentHz=[OrbyDisplay]::RefreshHz([Windows.Forms.Screen]::PrimaryScreen.DeviceName)
-            if($currentHz -ne $script:displayHz){$script:displayHz=$currentHz;Write-OrbitLog ('DISPLAY refreshHz='+$currentHz)}
+            $currentHz=[OrbyDisplay]::RefreshHz(([Windows.Forms.Screen]::FromHandle([Windows.Interop.WindowInteropHelper]::new($window).Handle)).DeviceName)
+            if($currentHz -ne $script:displayHz){$script:displayHz=$currentHz;[OrbyRefreshClock]::Configure($currentHz);Write-OrbitLog ('DISPLAY refreshHz='+$currentHz)}
             Write-OrbitLog ('RENDER observedFps='+[math]::Round($script:avatarRenderer.ObservedFps,1)+' p95FrameMs='+[math]::Round($script:avatarRenderer.P95FrameMs,1)+' maxGapMs='+[math]::Round($script:avatarRenderer.MaxFrameGapMs,1))
         }
+        if($PerformanceCheck){Write-OrbitLog ('SCAN ms='+[math]::Round($scanWatch.Elapsed.TotalMilliseconds,1))}
         if ($script:orbyWorkerHandle.IsCompleted -and -not $script:orbyShared.Stop) {
             $errors=$script:orbyWorker.Streams.Error | Out-String
             Write-OrbitLog ('Connection worker stopped: '+$errors)
@@ -1291,18 +1276,42 @@ $scanTimer.Add_Tick({
         Write-OrbitLog "Timer warning: $($_.Exception.Message)"
         Set-OrbitState 'detector-error' 'Orbit detector issue' 'Run Capture-ChatGPT-UI.cmd' 'ERR' '#FF6B6B' 'Detector error' $_.Exception.Message 'CHAT' $false 'error'
     }
-})
+}
+$scanTimer.Add_Tick($scanTick)
 
 try {
+    Start-OrbyUiScanner
     Start-OrbyWorker
     Start-OrbyTray
+    # Warm the status and layout paths before displaying the animated greeting.
+    & $scanTick
+    Update-OrbyHome
     # Native rendering starts with the WPF composition loop.
     $scanTimer.Start()
     Write-OrbitLog 'Animation and detector timers started.'
-    $null = $window.ShowDialog()
+    $orbyApplication=[Windows.Application]::Current
+    if(-not $orbyApplication){$orbyApplication=[Windows.Application]::new()}
+    $orbyApplication.ShutdownMode=[Windows.ShutdownMode]::OnMainWindowClose
+    $null=$orbyApplication.Run($window)
     Write-OrbitLog 'Window closed normally.'
     exit 0
 } catch {
     Fail-Orbit "Orbit crashed: $($_.Exception.Message)"
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -1,4 +1,4 @@
-param($Shared,[string]$BaseDirectory,[string]$DataDirectory)
+﻿param($Shared,[string]$BaseDirectory,[string]$DataDirectory)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime,System.Windows.Forms,UIAutomationClient,UIAutomationTypes,System.Net.Http
 function Await-WinRt {
@@ -19,14 +19,6 @@ $artKey='';$artBytes=$null;$artAt=[datetime]::MinValue;$trackAt=[datetime]::MinV
 $lastManager=[datetime]::MinValue;$lastMedia=[datetime]::MinValue
 while(-not $Shared.Stop){
  $now=[datetime]::UtcNow;$settings=$Shared.Settings
-    $mediaCommand=$null
-    while($Shared.SpotifyCommands -and $Shared.SpotifyCommands.TryDequeue([ref]$mediaCommand)){
-        try{
-            if(-not $settings.Music){throw 'Music connection is off'}
-            Invoke-OrbySpotifyControl $manager $mediaCommand
-            $Shared.SpotifyResult='';$lastMedia=[datetime]::MinValue
-        }catch{$Shared.SpotifyResult=$_.Exception.GetBaseException().Message}
-    }
     if($settings.Music -and ($now-$lastMedia).TotalSeconds -ge 0.35){
         $lastMedia=$now
         if(-not $manager -and ($now-$lastManager).TotalSeconds -ge 15){
