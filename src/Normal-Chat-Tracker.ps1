@@ -1,4 +1,4 @@
-$script:normalChatLastWorking = $false
+﻿$script:normalChatLastWorking = $false
 $script:normalChatState = 'idle'
 $script:normalChatUntil = [datetime]::MinValue
 $script:normalChatActivity = ''
@@ -6,7 +6,9 @@ function Update-OrbyNormalChatTracker {
  param($Chat,$Snapshot)
  $now=Get-Date
  if(-not $Chat -or $Snapshot.Mode -ne 'CHAT'){return $false}
- if($Snapshot.Working){
+ if(-not [string]::IsNullOrWhiteSpace($Snapshot.InputRequest)){
+  $script:normalChatLastWorking=$true;$script:normalChatState='attention';$script:normalChatUntil=[datetime]::MinValue
+ }elseif($Snapshot.Working){
   $script:normalChatLastWorking=$true;$script:normalChatState='working';$script:normalChatUntil=[datetime]::MinValue
   $script:normalChatActivity=if($Snapshot.Activity){$Snapshot.Activity}else{'Generating response'}
  }elseif($Snapshot.Failure -and $script:normalChatLastWorking){

@@ -10,6 +10,7 @@ function Await-WinRt {
 }
 . (Join-Path $BaseDirectory 'Media-Stream.ps1')
 . (Join-Path $BaseDirectory 'Spotify-Control.ps1')
+. (Join-Path $BaseDirectory 'Media-Sources.ps1')
 $manager=$null;$notificationListener=$null
 try {
     [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,Windows.Media.Control,ContentType=WindowsRuntime]
@@ -17,17 +18,18 @@ try {
 } catch {$Shared.MediaError='Media connection: '+$_.Exception.GetBaseException().Message}
 while(-not $Shared.Stop){
  $batch=New-Object 'System.Collections.Generic.List[object]';$item=$null
- while($Shared.SpotifyCommands.TryDequeue([ref]$item)){
+ while($Shared.MusicCommands.TryDequeue([ref]$item)){
   if($batch.Count -gt 0 -and $item.Action -eq 'seek' -and $batch[$batch.Count-1].Action -eq 'seek' -and $item.TrackKey -eq $batch[$batch.Count-1].TrackKey){$batch[$batch.Count-1]=$item}else{$batch.Add($item)}
  }
  foreach($command in $batch){
   try{
    if(-not $Shared.Settings.Music){throw 'Music connection is off'}
    if(-not $manager){$manager=Await-WinRt ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])}
-   Invoke-OrbySpotifyControl $manager $command
-   $Shared.SpotifyControlReply=[pscustomobject]@{Id=$command.Id;Ok=$true;At=[datetime]::UtcNow}
-   $Shared.SpotifyResult=''
-  }catch{$Shared.SpotifyResult=$_.Exception.GetBaseException().Message;$Shared.SpotifyControlReply=[pscustomobject]@{Id=$command.Id;Ok=$false;At=[datetime]::UtcNow}}
+   if(-not (Test-OrbyMusicCommandCurrent $Shared $command)){throw 'Music app or track changed. Try again.'}
+   Invoke-OrbyMediaControl $manager $command $Shared
+   $Shared.MusicControlReply=[pscustomobject]@{Id=$command.Id;Ok=$true;At=[datetime]::UtcNow}
+   if(Test-OrbyMusicCommandCurrent $Shared $command){$Shared.MusicResult=''}
+  }catch{if(Test-OrbyMusicCommandCurrent $Shared $command){$Shared.MusicResult=$_.Exception.GetBaseException().Message};$Shared.MusicControlReply=[pscustomobject]@{Id=$command.Id;Ok=$false;At=[datetime]::UtcNow}}
  }
  Start-Sleep -Milliseconds 20
 }

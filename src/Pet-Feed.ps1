@@ -1,4 +1,4 @@
-# Mirrors local task lifecycle/item data used by the app's pet, read-only.
+﻿# Mirrors local task lifecycle/item data used by the app's pet, read-only.
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 public class OrbitPetTask {
  public string Id,Title,Path,Turn,PendingCall="",State="idle",Action="Thinking";
+ public bool PendingAsync;
  public DateTime Started=DateTime.MinValue,Last=DateTime.MinValue;
 }
 public static class OrbitPetFeed {
@@ -54,15 +55,18 @@ public static class OrbitPetFeed {
     bool item=Regex.IsMatch(head,"\"type\"\\s*:\\s*\"response_item\"\\s*,\\s*\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:");
     if(!ev&&!item)continue;
     int pos=head.IndexOf("\"payload\"");if(pos<0)continue;
-    string payload=head.Substring(pos);string kind=Field(payload,"type");
+    // Envelope checks are bounded; call IDs can follow a long question's arguments.
+    string payload=line.Substring(pos);string kind=Field(payload,"type");
     if(kind=="custom_tool_call")kind="function_call";
     if(kind=="custom_tool_call_output")kind="function_call_output";
-    if(kind!="task_started"&&kind!="task_complete"&&kind!="turn_aborted"&&kind!="task_failed"&&kind!="function_call"&&kind!="function_call_output"&&kind!="exec_approval_request"&&kind!="apply_patch_approval_request"&&kind!="approval_request")continue;
+    bool userReply=(kind=="user_message"||(kind=="message"&&Field(payload,"role")=="user"))&&(line.Contains("<send_user_message_question_reply>")||line.Contains(@"\u003csend_user_message_question_reply\u003e"));
+    if(!userReply&&kind!="task_started"&&kind!="task_complete"&&kind!="turn_aborted"&&kind!="task_failed"&&kind!="function_call"&&kind!="function_call_output"&&kind!="exec_approval_request"&&kind!="apply_patch_approval_request"&&kind!="approval_request")continue;
     DateTime at;if(!DateTime.TryParse(Field(head,"timestamp"),null,System.Globalization.DateTimeStyles.AdjustToUniversal,out at))continue;
+    if(userReply){if(task.PendingAsync&&task.PendingCall.Length>0&&line.Contains(task.PendingCall)&&at>=task.Started){task.PendingCall="";task.PendingAsync=false;task.State="working";task.Last=at;task.Action="Thinking";}continue;}
     string turn=Field(payload,"turn_id");
-    if(kind=="task_started"){task.Turn=turn;task.PendingCall="";task.State="working";task.Started=at;task.Last=at;task.Action="Thinking";continue;}
+    if(kind=="task_started"){task.Turn=turn;task.PendingCall="";task.PendingAsync=false;task.State="working";task.Started=at;task.Last=at;task.Action="Thinking";continue;}
     if(kind=="task_complete"||kind=="turn_aborted"||kind=="task_failed"){
-     if(turn==task.Turn&&at>=task.Started){task.PendingCall="";task.State=kind=="task_complete"?"success":kind=="turn_aborted"?"stopped":"error";task.Last=at;}
+     if(turn==task.Turn&&at>=task.Started){task.PendingCall="";task.PendingAsync=false;task.State=kind=="task_complete"?"success":kind=="turn_aborted"?"stopped":"error";task.Last=at;}
      continue;
     }
     if(task.State!="working"&&task.State!="attention")continue;
@@ -74,10 +78,13 @@ public static class OrbitPetFeed {
     task.Last=at;
     if(kind=="function_call_output"){
      if(task.State=="attention" && task.PendingCall.Length>0 && Field(payload,"call_id")!=task.PendingCall)continue;
-     task.PendingCall="";task.State="working";task.Action="Thinking";continue;
+     // Async delivery acknowledgment is not the user's answer.
+     if(task.PendingAsync&&Regex.IsMatch(line,@"accepted\\?""\s*:\s*true"))continue;
+     task.PendingCall="";task.PendingAsync=false;task.State="working";task.Action="Thinking";continue;
     }
     string name=Field(payload,"name");
     string body=line.Substring(0,Math.Min(line.Length,12000));
+    bool asyncQuestion=name.Contains("request_user_input_async");
     bool permission=name.EndsWith("request_permissions") || ((name.EndsWith(".exec")||name=="exec") && Regex.IsMatch(body,@"\btools\.request_permissions\s*\("));
     if(permission){
      task.PendingCall=Field(payload,"call_id");task.State="attention";
@@ -88,7 +95,7 @@ public static class OrbitPetFeed {
     if(name.EndsWith(".exec")||name=="exec"){
      var tool=Regex.Match(line.Substring(0,Math.Min(line.Length,12000)),"exec_command|write_stdin|apply_patch|imagegen|web__run|request_user_input|view_image|read_thread|wait_threads");if(tool.Success)name=tool.Value;
     }
-    if(name.Contains("request_user_input")){task.PendingCall=Field(payload,"call_id");task.State="attention";task.Action="Waiting for your input";}
+    if(name.Contains("request_user_input")){task.PendingCall=Field(payload,"call_id");task.PendingAsync=asyncQuestion;task.State="attention";task.Action="Waiting for your input";}
     else {task.State="working";task.Action=Action(name);}
    }
    }
@@ -121,10 +128,10 @@ function Sync-OfficialTaskFeed {
     param([datetime]$Now=[datetime]::UtcNow)
     if($script:feedPollTask){
         if(-not $script:feedPollTask.IsCompleted){return}
-        if(-not $script:feedPollTask.IsFaulted){
+        if(-not $script:feedPollTask.IsFaulted -and -not $script:feedPollTask.IsCanceled){
             $tasks=$script:feedPollTask.Result
             if($tasks.Count -gt 0){$script:petFeedAvailable=$true;Set-PetFeedSnapshot $tasks $Now (@(Get-Process ChatGPT -ErrorAction SilentlyContinue).Count -gt 0)}
-        }else{Write-OrbitLog ('PET FEED unavailable: '+$script:feedPollTask.Exception.GetBaseException().Message)}
+        }elseif($script:feedPollTask.IsFaulted){Write-OrbitLog ('PET FEED unavailable: '+$script:feedPollTask.Exception.GetBaseException().Message)}
         $script:feedPollTask=$null
     }
     if (($Now-$script:petPollAt).TotalSeconds -lt 2) {return}

@@ -1,4 +1,4 @@
-if(-not ('OrbyLogDiscovery' -as [type])){Add-Type -Path (Join-Path $PSScriptRoot 'Log-Discovery.cs')}
+﻿if(-not ('OrbyLogDiscovery' -as [type])){Add-Type -Path (Join-Path $PSScriptRoot 'Log-Discovery.cs')}
 # PowerShell 5.1. No UI dependencies: replayable state machine.
 $script:eventFloor = [datetime]::UtcNow
 $script:eventClock = $script:eventFloor
@@ -127,7 +127,7 @@ function Process-ChatGptLogLine {
 function Update-ChatGptLogWatcher {
     $now = [datetime]::UtcNow
     if($script:logDiscoveryTask -and $script:logDiscoveryTask.IsCompleted){
-        if(-not $script:logDiscoveryTask.IsFaulted){foreach($file in $script:logDiscoveryTask.Result){
+        if(-not $script:logDiscoveryTask.IsFaulted -and -not $script:logDiscoveryTask.IsCanceled){foreach($file in $script:logDiscoveryTask.Result){
             if(-not $script:logReaders.ContainsKey($file.Path)){$script:logReaders[$file.Path]=@{Cursor=0L;Carry='';InitialLength=$file.Length;Decoder=[Text.Encoding]::UTF8.GetDecoder()}}
         }}
         $script:logDiscoveryTask=$null

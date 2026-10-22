@@ -16,9 +16,9 @@
         }
     })
     $d.WatchTopics.Text=$script:orbySettings.WatchTopics
-    $d.MediaPrevious.Add_Click({$script:orbyShared.Commands.Enqueue('previous')})
-    $d.MediaPlay.Add_Click({$script:orbyShared.Commands.Enqueue('play')})
-    $d.MediaNext.Add_Click({$script:orbyShared.Commands.Enqueue('next')})
+    $d.MediaPrevious.Add_Click({Send-OrbyMusicControl 'previous'})
+    $d.MediaPlay.Add_Click({$m=$script:orbyShared.SelectedMusic;if($m){Send-OrbyMusicControl $(if($m.Playing){'pause'}else{'play'})}})
+    $d.MediaNext.Add_Click({Send-OrbyMusicControl 'next'})
     $d.VolumeDown.Add_Click({if($script:avatarRenderer){[void]$script:avatarRenderer.Trigger('volume_change');[void]$script:referenceRenderer.Trigger('volume_change')};$script:orbyShared.Commands.Enqueue('volumedown')})
     $d.VolumeUp.Add_Click({if($script:avatarRenderer){[void]$script:avatarRenderer.Trigger('volume_change');[void]$script:referenceRenderer.Trigger('volume_change')};$script:orbyShared.Commands.Enqueue('volumeup')})
     $d.MuteAudio.Add_Click({Invoke-OrbyQuickAction 'mute'})
@@ -121,19 +121,22 @@ function Show-OrbySettings {
     if($script:settingsWindow -and $script:settingsWindow.IsVisible){$script:settingsWindow.Activate();return}
     [xml]$xml=(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Settings.xaml') -Raw).Replace('<Storyboard>',('<Storyboard Timeline.DesiredFrameRate="'+$(if($script:displayHz -gt 0){$script:displayHz}else{60})+'">'))
     $script:settingsWindow=[Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $xml))
+    $script:settingsWindow.Height=[math]::Max(480,[math]::Min($script:settingsWindow.Height,[Windows.SystemParameters]::WorkArea.Height-40))
     if($script:desktopPanel){
       if($script:desktopPanel.Parent -is [Windows.Controls.ContentControl]){$script:desktopPanel.Parent.Content=$null}
       $script:settingsWindow.FindName('SettingsControlsHost').Content=$script:desktopPanel
     }
     $script:settingsControls=@{}
-    foreach($name in @('AIConnections','EnableHideFullscreen','EnableEyeEffects','EnableReducedMotion','EnableSounds','EnableStartWithWindows','EnableMusic','EnableNotifications','EnableHealth','EnableDownloads','EnableTasks','EnableWatchlist','EnableAllowPublicNews','EnableQuiet','EnablePreview','NotificationApps','MediaApp','MediaHelp','DownloadFolder','BrowseDownloadFolder','SettingsWatchTopics','FocusMinutes','BreakMinutes','FavoriteList','AddFavorite','RemoveFavorite','LaunchFavorite','SettingsMessage','SaveSettings','CloseSettings','EnableNotificationAccess','NotificationHelp')){$script:settingsControls[$name]=$script:settingsWindow.FindName($name)}
+    foreach($name in @('DefaultNotchSize','MiniNotchSize','AIConnections','EnableHideFullscreen','EnableEyeEffects','EnableReducedMotion','EnableSounds','EnableStartWithWindows','EnableMusic','EnableNotifications','EnableHealth','EnableDownloads','EnableTasks','EnableWatchlist','EnableAllowPublicNews','EnableQuiet','EnablePreview','NotificationApps','MediaApp','MediaHelp','DownloadFolder','BrowseDownloadFolder','SettingsWatchTopics','FocusMinutes','BreakMinutes','FavoriteList','AddFavorite','RemoveFavorite','LaunchFavorite','SettingsMessage','SaveSettings','CloseSettings','EnableNotificationAccess','NotificationHelp')){$script:settingsControls[$name]=$script:settingsWindow.FindName($name)}
     $c=$script:settingsControls
-    $c['EnableStartWithWindows'].IsEnabled=$false;$c['EnableStartWithWindows'].ToolTip='Automatic startup is disabled in this security build.'
+    $c.DefaultNotchSize.IsChecked=$script:orbySettings.NotchSize -ne 'mini';$c.MiniNotchSize.IsChecked=$script:orbySettings.NotchSize -eq 'mini'
+    $c['EnableStartWithWindows'].IsEnabled=$true;$c['EnableStartWithWindows'].ToolTip='Save to add or remove your Windows Startup shortcut. Keep Orby in this folder.'
     foreach($key in @('HideFullscreen','EyeEffects','ReducedMotion','Sounds','StartWithWindows','Music','Notifications','Health','Downloads','Tasks','Watchlist','AllowPublicNews','Quiet','Preview')){$c['Enable'+$key].IsChecked=[bool]$script:orbySettings[$key]}
-    foreach($key in @('NotificationApps','MediaApp','DownloadFolder','FocusMinutes','BreakMinutes')){$c[$key].Text=[string]$script:orbySettings[$key]}
+    foreach($key in @('NotificationApps','DownloadFolder','FocusMinutes','BreakMinutes')){$c[$key].Text=[string]$script:orbySettings[$key]}
     $c.AIConnections.Add_Click({Show-OrbyConnections})
     $c.SettingsWatchTopics.Text=$script:orbySettings.WatchTopics
-    $c.MediaHelp.Text='Detected sessions: '+($script:orbyShared.MediaApps -join ', ')
+    $c.MediaApp.ItemsSource=@(Get-OrbyMusicSourceOptions $script:orbyShared.MusicSources ([string]$script:orbySettings.MediaApp));$c.MediaApp.SelectedValue=[string]$script:orbySettings.MediaApp
+    $c.MediaHelp.Text='Automatic follows the playing app. Choose a browser for web players such as YouTube Music. Missing controls depend on what the player shares with Windows.'
     $c.FavoriteList.ItemsSource=@($script:orbySettings.Favorites)
     $c.BrowseDownloadFolder.Add_Click({$dialog=New-Object Windows.Forms.FolderBrowserDialog;$dialog.SelectedPath=$script:settingsControls.DownloadFolder.Text;if($dialog.ShowDialog() -eq 'OK'){$script:settingsControls.DownloadFolder.Text=$dialog.SelectedPath};$dialog.Dispose()})
     $c.AddFavorite.Add_Click({
@@ -159,10 +162,13 @@ function Show-OrbySettings {
             if(-not [int]::TryParse($script:settingsControls.BreakMinutes.Text,[ref]$break) -or $break -lt 0 -or $break -gt 240){throw 'Break minutes must be between 0 and 240'}
             if(-not (Test-Path -LiteralPath $script:settingsControls.DownloadFolder.Text -PathType Container)){throw 'Choose an existing download folder'}
             foreach($key in @('HideFullscreen','EyeEffects','ReducedMotion','Sounds','StartWithWindows','Music','Notifications','Health','Downloads','Tasks','Watchlist','AllowPublicNews','Quiet','Preview')){$script:orbySettings[$key]=[bool]$script:settingsControls['Enable'+$key].IsChecked}
-            foreach($key in @('NotificationApps','MediaApp','DownloadFolder')){$script:orbySettings[$key]=$script:settingsControls[$key].Text.Trim()}
+            foreach($key in @('NotificationApps','DownloadFolder')){$script:orbySettings[$key]=$script:settingsControls[$key].Text.Trim()}
+            $musicChoice=[string]$script:settingsControls.MediaApp.SelectedValue;if($musicChoice -ne [string]$script:orbySettings.MediaApp){$script:orbySettings.MediaApp=$musicChoice;Reset-OrbyMusicSelection}
             $script:orbySettings.WatchTopics=$script:settingsControls.SettingsWatchTopics.Text.Trim();$script:orbySettings.FocusMinutes=$focus;$script:orbySettings.BreakMinutes=$break
             $script:orbyNextBreak=[datetime]::UtcNow.AddMinutes([Math]::Max(1,$break))
-            Save-OrbySettings;$script:desktopControls.WatchTopics.Text=$script:orbySettings.WatchTopics
+            Set-OrbyStartup -Enabled ([bool]$script:settingsControls.EnableStartWithWindows.IsChecked)
+            $script:orbySettings.NotchSize=if($script:settingsControls.MiniNotchSize.IsChecked){'mini'}else{'default'}
+            Save-OrbySettings;Update-OrbyCompactTask;$script:desktopControls.WatchTopics.Text=$script:orbySettings.WatchTopics
             $script:settingsControls.SettingsMessage.Text='Saved. Your choices are active.'
         }catch{$script:settingsControls.SettingsMessage.Text=$_.Exception.Message}
     })
@@ -180,10 +186,10 @@ function Start-OrbyTray {
     $focus=$menu.Items.Add('Start / stop focus');$focus.Add_Click({Invoke-OrbyQuickAction 'focus'})
     $quiet=$menu.Items.Add('Toggle quiet mode');$quiet.Add_Click({$script:orbySettings.Quiet=-not $script:orbySettings.Quiet;Save-OrbySettings})
     $recenter=$menu.Items.Add('Recenter Orby');$recenter.Add_Click({Position-Orbit})
-    $exit=$menu.Items.Add('Quit Orby');$exit.Add_Click({$window.Close()})
+    $exit=$menu.Items.Add('Quit Orby');$script:orbyQuitMenuItem=$exit;$exit.Add_Click({Request-OrbyQuit})
     $script:orbyTray.ContextMenuStrip=$menu
     $script:orbyTray.Add_DoubleClick({Show-OrbySettings})
-    $window.Add_Closed({$script:orbyShared.Stop=$true;$script:orbyTray.Visible=$false;$script:orbyTray.Dispose();if($script:settingsWindow){$script:settingsWindow.Close()};try{$script:orbyWorker.Stop();$script:orbyWorker.Dispose();$script:orbyRunspace.Dispose()}catch{}})
+    $window.Add_Closed({$script:orbyShared.Stop=$true;try{$script:orbyTray.Visible=$false;$script:orbyTray.Dispose()}catch{};try{if($script:settingsWindow){$script:settingsWindow.Close()}}catch{};[OrbyBackgroundShutdown]::Stop($script:orbyWorker,$script:orbyRunspace)})
 }
 
 

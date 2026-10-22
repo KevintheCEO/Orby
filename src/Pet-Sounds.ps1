@@ -1,4 +1,4 @@
-Add-Type -Path (Join-Path $PSScriptRoot 'Pet-Sounds.cs')
+﻿Add-Type -Path (Join-Path $PSScriptRoot 'Pet-Sounds.cs')
 $script:lastSoundGesture=''
 function Invoke-OrbySound {
  param([string]$Kind)

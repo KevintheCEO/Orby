@@ -1,4 +1,4 @@
-# Read-only Windows SQLite metadata and append-only task lifecycle evidence.
+﻿# Read-only Windows SQLite metadata and append-only task lifecycle evidence.
 $script:chatTaskTitle=''
 $script:taskEvidenceAt=[datetime]::MinValue
 $script:taskMetadataCache=@{}

@@ -1,4 +1,4 @@
-function Get-OrbyControlAction {
+﻿function Get-OrbyControlAction {
  param($Element)
  $pattern=$null
  if($Element.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern,[ref]$pattern)){return [pscustomobject]@{Kind='Invoke';Pattern=$pattern}}

@@ -1,4 +1,4 @@
-Add-Type -Path (Join-Path $PSScriptRoot 'File-Inbox.cs')
+﻿Add-Type -Path (Join-Path $PSScriptRoot 'File-Inbox.cs')
 $script:orbyInbox=Join-Path $logDir 'inbox'
 $script:orbyCopies=New-Object System.Collections.Generic.List[object]
 $script:orbyShelfSignature='';$script:shelfPollAt=[datetime]::MinValue
@@ -10,13 +10,13 @@ function Add-OrbyShelfFile {
 function Update-OrbyShelf {
  for($i=$script:orbyCopies.Count-1;$i -ge 0;$i--){
   $task=$script:orbyCopies[$i];if(-not $task.IsCompleted){continue}
-  if($task.IsFaulted){$script:desktopControls.ShelfMessage.Text=$task.Exception.GetBaseException().Message}
+  if($task.IsCanceled){$script:desktopControls.ShelfMessage.Text='Copy canceled'}elseif($task.IsFaulted){$script:desktopControls.ShelfMessage.Text=$task.Exception.GetBaseException().Message}
   else{$script:desktopControls.ShelfMessage.Text='Saved '+$task.Result.Name+' to your local shelf';Add-OrbyAlert 'file' 'File added' $task.Result.Name}
   $script:orbyCopies.RemoveAt($i)
  }
  if(-not $script:desktopControls){return}
  if($script:shelfInventoryTask -and $script:shelfInventoryTask.IsCompleted){
-  if(-not $script:shelfInventoryTask.IsFaulted -and $script:shelfInventoryTask.Result.Valid){
+  if(-not $script:shelfInventoryTask.IsFaulted -and -not $script:shelfInventoryTask.IsCanceled -and $script:shelfInventoryTask.Result.Valid){
    $files=$script:shelfInventoryTask.Result.Files
    $signature=($files | ForEach-Object {$_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks}) -join ';'
    if($signature -ne $script:orbyShelfSignature){$script:orbyShelfSignature=$signature

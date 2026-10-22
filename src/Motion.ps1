@@ -1,24 +1,18 @@
-Add-Type -AssemblyName System.Windows.Forms
+﻿Add-Type -AssemblyName System.Windows.Forms
 function Invoke-OrbyMotion {
-    param([Windows.DependencyObject]$Target,[Windows.DependencyProperty]$Property,[double]$To,[double]$Seconds=0.25)
-    $from=[double]$Target.GetValue($Property)
-    $Target.BeginAnimation($Property,$null)
-    $Target.SetValue($Property,$To)
-    $animation=New-Object Windows.Media.Animation.DoubleAnimation
-    if($script:displayHz -gt 0){[Windows.Media.Animation.Timeline]::SetDesiredFrameRate($animation,$script:displayHz)}
-    $animation.From=$from;$animation.To=$To
-    $animation.Duration=New-Object Windows.Duration ([timespan]::FromSeconds($Seconds))
-    $ease=New-Object Windows.Media.Animation.CubicEase
-    $ease.EasingMode=[Windows.Media.Animation.EasingMode]::EaseOut
-    $animation.EasingFunction=$ease
-    $animation.FillBehavior=[Windows.Media.Animation.FillBehavior]::Stop
-    $Target.BeginAnimation($Property,$animation,[Windows.Media.Animation.HandoffBehavior]::SnapshotAndReplace)
+    param([Windows.DependencyObject]$Target,[Windows.DependencyProperty]$Property,[double]$To,[double]$Seconds=0.25,[double]$Delay=0)
+    [OrbyMotion.Transitions]::MoveAfter($Target,$Property,$To,$Seconds,$script:displayHz,([bool]$script:orbySettings.ReducedMotion -or -not [Windows.SystemParameters]::ClientAreaAnimation),$Delay)
 }
 
 
 Add-Type -Path (Join-Path $PSScriptRoot 'Coucou-Motion.cs') -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework')
 
-Add-Type -Path @((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $PSScriptRoot 'Hydration-Avatar.cs'),(Join-Path $PSScriptRoot 'Rendered-Assets.cs'),(Join-Path $PSScriptRoot 'Hydration-Model.cs'),(Join-Path $PSScriptRoot 'Animation-Catalog.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
+$privateRoot=Join-Path $PSScriptRoot 'Personal'
+$script:orbyPrivateWater=(Test-Path (Join-Path $privateRoot 'Hydration-Avatar.cs')) -and (Test-Path (Join-Path $privateRoot 'Animation-Catalog.cs')) -and (Test-Path (Join-Path $privateRoot 'Water-Preview.ps1'))
+$extraRoot=if($script:orbyPrivateWater){$privateRoot}else{$PSScriptRoot}
+$avatarSources=@((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $extraRoot 'Hydration-Avatar.cs'),(Join-Path $PSScriptRoot 'Rendered-Assets.cs'),(Join-Path $extraRoot 'Animation-Catalog.cs'))
+if($script:orbyPrivateWater){$avatarSources+=Join-Path $privateRoot 'Hydration-Model.cs'}
+Add-Type -Path $avatarSources -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
 $script:displayHz=[OrbyDisplay]::RefreshHz([Windows.Forms.Screen]::PrimaryScreen.DeviceName)
 
 

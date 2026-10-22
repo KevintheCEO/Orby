@@ -2,7 +2,7 @@
 [xml]$eventXml=Get-Content (Join-Path $PSScriptRoot 'Event-Card.xaml') -Raw
 $script:eventCard=[Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $eventXml))
 $script:eventControls=@{}
-foreach($name in @('EventApprove','EventDeny','EventOrb','EventColor','EventStatus','EventTitle','EventDetail','EventOpen','EventDismiss','EventPrompt')){$script:eventControls[$name]=$script:eventCard.FindName($name)}
+foreach($name in @('EventApprove','EventDeny','EventOrb','EventColor','EventStatus','EventTitle','EventDetail','EventOpen','EventDismiss','EventPrompt','EventChoices')){$script:eventControls[$name]=$script:eventCard.FindName($name)}
 $script:eventAvatar=New-OrbitAvatar
 $script:eventControls.EventOrb.Child=$script:eventAvatar.Root
 $script:eventRenderer=New-Object OrbyAvatarRenderer ($script:eventAvatar)
@@ -14,11 +14,19 @@ $script:eventControls.EventDismiss.Add_Click({$script:eventDismissed=$script:eve
 $script:orbyEventMode='';$script:eventSignature='';$script:eventDismissed=''
 function Update-OrbyEventCard {
  if($script:waterPriority){return}
- if($script:orbySettings.PrimaryProvider -and $script:orbySettings.PrimaryProvider -ne 'chatgpt'){if($script:eventCard.Visibility -eq 'Visible'){$script:eventCard.Visibility='Collapsed';$script:orbyEventMode='';Set-OrbyHomePage 'home'};Set-OrbyEventUnderlay $false;return}
- $mode=if($script:chatLogState -eq 'attention'){'attention'}elseif($script:chatLogState -eq 'success'){'success'}else{''}
- $signature=$mode+'|'+$script:chatLogActiveConversation+'|'+$script:chatLogActiveTurn+'|'+$script:chatLogMessage
+ if(-not $script:dropBusy -and 'chatgpt' -notin ($script:orbySettings.ProviderEnabled -split ',')){
+  $hadOverlay=[bool]$script:orbyEventMode
+  $script:eventCard.Visibility='Collapsed';$script:orbyEventMode='';$script:eventSignature=''
+  Set-OrbyEventUnderlay $false
+  if($hadOverlay){$script:referenceHome.Visibility='Visible';Set-OrbyHomePage 'home'}
+  return
+ }
+ Update-OrbyApprovalBridge
+ $hasRequest=$script:approvalRequest -and $script:approvalRequest.Available -and $script:approvalRequestAt -and ([datetime]::UtcNow-$script:approvalRequestAt).TotalSeconds -lt 5
+ $mode=if($hasRequest -or $script:chatLogState -eq 'attention'){'attention'}elseif($script:chatLogState -eq 'success'){'success'}else{''}
+ $signature=$mode+'|'+$script:chatLogActiveConversation+'|'+$script:chatLogActiveTurn+'|'+$script:chatLogMessage+'|'+$(if($hasRequest){$script:approvalRequest.Id}else{''})
  if($signature -eq $script:eventDismissed -and $mode -ne 'attention'){$mode=''}
- if($script:dropBusy){$mode='drop'}
+ if($script:dropBusy){$mode='drop';$signature='drop'}
  Set-OrbyEventUnderlay ([bool]$mode)
  if($mode -eq 'attention'){Update-OrbyApprovalBridge}
  if($mode -eq $script:orbyEventMode -and $signature -eq $script:eventSignature){Update-OrbyApprovalView;return}
@@ -26,11 +34,14 @@ function Update-OrbyEventCard {
  $script:eventControls.EventDetail.Visibility='Visible'
  $script:eventControls.EventOpen.Content='Open ChatGPT'
  $script:orbyEventMode=$mode;$script:eventSignature=$signature
- if(Get-Command Update-OrbyAlbumArt -ErrorAction SilentlyContinue){Update-OrbyAlbumArt}
+ if(Test-Path function:Update-OrbyAlbumArt){Update-OrbyAlbumArt}
  if($script:dropPanel){$script:dropPanel.Visibility='Collapsed'}
  if($mode){
   $script:referenceHome.Visibility='Visible';$script:referenceControls.RefHomePage.Visibility='Collapsed';$script:referenceControls.RefMusicPage.Visibility='Collapsed';$script:referenceControls.RefAgentsPage.Visibility='Collapsed';$script:eventCard.Visibility='Visible'
-  $expandedArea.Height=180;Invoke-OrbyMotion $notch ([OrbyLiquidSurface]::ExpandedHeightProperty) 194 0.22
+  $question=$hasRequest -and $script:approvalRequest.Kind -eq 'question'
+  $script:eventCard.Height=if($question){276}else{148}
+  $eventHeight=if($question){308}else{180}
+  $expandedArea.Height=$eventHeight;Invoke-OrbyMotion $notch ([OrbyLiquidSurface]::ExpandedHeightProperty) ($eventHeight+14) 0.22
   $script:eventControls.EventTitle.Text=Get-NotchTaskTitle 'ChatGPT task'
   $script:eventControls.EventTitle.ToolTip=$script:eventControls.EventTitle.Text
   $script:eventControls.EventDismiss.Visibility=if($mode -eq 'attention'){'Collapsed'}else{'Visible'}

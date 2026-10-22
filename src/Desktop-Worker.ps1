@@ -1,4 +1,4 @@
-param($Shared,[string]$BaseDirectory,[string]$DataDirectory)
+﻿param($Shared,[string]$BaseDirectory,[string]$DataDirectory)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime,System.Windows.Forms,UIAutomationClient,UIAutomationTypes,System.Net.Http
 function Await-WinRt {

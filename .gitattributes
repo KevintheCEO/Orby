@@ -1,0 +1,5 @@
+# Preserve the exact tested source bytes, including PowerShell 5.1 UTF-8 BOMs
+# and existing Windows line endings, in tags and source archives.
+* -text
+*.png binary
+*.ico binary

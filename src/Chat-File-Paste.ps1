@@ -1,4 +1,4 @@
-function New-OrbyFileClipboard {
+﻿function New-OrbyFileClipboard {
  param([string[]]$Files,[string]$Token)
  $items=New-Object Collections.Specialized.StringCollection
  foreach($file in $Files){
@@ -7,6 +7,7 @@ function New-OrbyFileClipboard {
  }
  $data=New-Object Windows.Forms.DataObject
  $data.SetFileDropList($items)
+ $effect=[IO.MemoryStream]::new([BitConverter]::GetBytes([int]1));$data.SetData('Preferred DropEffect',$effect)
  $data.SetData('Orby.FileTransfer.Token',$Token)
  return $data
 }
@@ -35,8 +36,8 @@ function Paste-OrbyFiles {
  Start-Sleep -Milliseconds 150
  $focused=[Windows.Automation.AutomationElement]::FocusedElement
  if([OrbyChatWindow]::GetForegroundWindow() -ne $ChatHwnd -or -not $focused -or
-    (Get-OrbyComposerRank $focused.Current.Name $focused.Current.AutomationId $focused.Current.ClassName) -le 0){
-  throw 'ChatGPT message box did not receive keyboard focus. Nothing was pasted'
+    -not [Windows.Automation.Automation]::Compare($focused,$Composer)){
+  throw 'The AI message box did not receive keyboard focus. Nothing was pasted'
  }
  $saved=Save-OrbyClipboard
  $token=[guid]::NewGuid().ToString()

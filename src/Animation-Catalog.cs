@@ -107,12 +107,6 @@ new Clip("idle_wiggle","Happy Wiggle",1600,false,25,35000,"idle_neutral",new Cha
 new Clip("idle_sway","Slow Sway",2600,false,25,40000,"idle_neutral",new Channel[]{new Channel("body.x",new double[]{0,-1.5,1.5,0},null,false),new Channel("body.rotationDeg",new double[]{0,-3,3,0},null,false)},0,"",0,2600,"neutral","",""),
 new Clip("thinking_ponder","Ponder",2800,true,88,0,"idle_neutral",new Channel[]{new Channel("body.rotationDeg",new double[]{0,5,2,0},null,false),new Channel("eyes.x",new double[]{0,0.45,0.45,0},null,false),new Channel("eyes.y",new double[]{0,-0.4,-0.4,0},null,false)},1,"orbit",18,2800,"ai","",""),
 new Clip("thinking_read","Read and Reflect",2200,true,88,0,"idle_neutral",new Channel[]{new Channel("eyes.x",new double[]{-0.5,0.5,-0.5,0.5,0},null,false),new Channel("eyes.y",new double[]{-0.25,0,0.25,0},null,false),new Channel("body.rotationDeg",new double[]{0,-2,0},null,false)},0,"",0,2200,"ai","statusDot",""),
-new Clip("water_reminder","Water: 1 - Playful reminder",5000,false,60,0,"water_wait",new Channel[]{new Channel("body.y",new double[]{0,-1.8,0,-1,0,0},null,false),new Channel("body.rotationDeg",new double[]{0,-3,3,0,0,0},null,false)},0,"",0,5000,"ai","",""),
-new Clip("water_wait","Water: Waiting for Drink or Skip",1800,true,60,0,"idle_neutral",new Channel[]{},0,"",0,1800,"ai","", ""),
-new Clip("water_skip","Water: Sad and dry",2500,false,60,0,"idle_neutral",new Channel[]{new Channel("body.y",new double[]{0,2,2,0},null,false),new Channel("body.scaleY",new double[]{1,.95,.95,1},null,false)},0,"",0,2500,"neutral","", ""),
-new Clip("water_reveal","Water: 2 - Bottle from behind",750,false,60,0,"water_sip",new Channel[]{new Channel("body.rotationDeg",new double[]{0,-5,0},null,false)},0,"",0,1100,"ai","",""),
-new Clip("water_sip","Water: 3 - Happy sip",1400,false,60,0,"water_progress",new Channel[]{new Channel("body.y",new double[]{0,-1,0},null,false)},0,"",0,2000,"ai","",""),
-new Clip("water_progress","Water: 4 - Daily bottle",2000,false,60,0,"idle_neutral",new Channel[]{new Channel("body.y",new double[]{0,-1,0},null,false)},0,"",0,2500,"ai","", ""),
 new Clip("thinking_connect","Connecting Ideas",2600,true,88,0,"idle_neutral",new Channel[]{new Channel("eyes.leftHeight",new double[]{1,0.65,1,1},null,false),new Channel("eyes.rightHeight",new double[]{1,1,0.65,1},null,false),new Channel("body.rotationDeg",new double[]{0,-3,3,0},null,false)},2,"orbit",18,2600,"ai","","")
   };
   public static readonly Dictionary<string,Clip> ById=new Dictionary<string,Clip>();

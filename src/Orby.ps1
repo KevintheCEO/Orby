@@ -6,6 +6,10 @@
 )
 
 $ErrorActionPreference = 'Stop'
+if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'SECURITY-REVIEW-PENDING.txt')){
+    Write-Error 'Orby is on hold after a Defender detection. Leave the executable quarantined and obtain a security review before running this build.'
+    exit 1
+}
 Add-Type -Path (Join-Path $PSScriptRoot 'Dpi-Boot.cs')
 [OrbyDpiBoot]::Enable()
 
@@ -24,6 +28,8 @@ function Write-OrbitLog {
 function Fail-Orbit {
     param([string]$Message)
     Write-OrbitLog "FATAL: $Message"
+    if(Test-Path function:Request-OrbyQuit){Request-OrbyQuit}
+    if($PerformanceCheck){exit 1}
     try {
         Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue
         [System.Windows.MessageBox]::Show(
@@ -36,7 +42,7 @@ function Fail-Orbit {
     exit 1
 }
 
-Write-OrbitLog '===== Orby v8.5 display scaling starting ====='
+Write-OrbitLog '===== Orby 10.40 desktop companion starting ====='
 Write-OrbitLog "PowerShell $($PSVersionTable.PSVersion) / $([Environment]::OSVersion.VersionString)"
 
 try {
@@ -126,7 +132,7 @@ $xaml = @'
 
                     <Canvas Grid.Column="0" x:Name="PetCanvas" Width="54" Height="38" VerticalAlignment="Center"/>
 
-                    <TextBlock x:Name="CompactTaskTitle" Grid.Column="1" Text="No active task" Foreground="#F1F2F4" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="CompactTaskTitle" FontFamily="Segoe UI" Grid.Column="1" Text="" Foreground="#F1F2F4" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" TextTrimming="CharacterEllipsis"/>
                     <StackPanel Grid.Column="1" Opacity="0" VerticalAlignment="Center" Margin="0,0,8,0">
                         <TextBlock x:Name="StateText" Text="Orby" Foreground="White" FontSize="13" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
                         <TextBlock x:Name="DetailText" Text="Waiting for ChatGPT" Foreground="#A9FFFFFF" FontSize="10" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
@@ -140,11 +146,11 @@ $xaml = @'
                     </Grid>
                 </Grid>
 
-                <Grid x:Name="ExpandedArea" Height="180" VerticalAlignment="Top" Grid.Row="0" Grid.RowSpan="2" Margin="0,8,0,0" Opacity="0" Visibility="Collapsed"/>
+                <Grid x:Name="ExpandedArea" Width="596" HorizontalAlignment="Center" Height="180" VerticalAlignment="Top" Grid.Row="0" Grid.RowSpan="2" Margin="0,8,0,0" Opacity="0" Visibility="Collapsed"/>
             </Grid>
         </local:OrbyLiquidSurface>
         <Button x:Name="AlbumCoverButton" Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="230,8,0,0" Visibility="Collapsed" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand">
-                        <Button.Template><ControlTemplate TargetType="Button"><Border CornerRadius="6" Background="#151515"><Border.Clip><RectangleGeometry Rect="0,0,32,32" RadiusX="6" RadiusY="6"/></Border.Clip><Image x:Name="AlbumCoverImage" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality"/></Border></ControlTemplate></Button.Template>
+                        <Button.Template><ControlTemplate TargetType="Button"><Grid ClipToBounds="False"><Border CornerRadius="6" Background="#151515"><Border.Clip><RectangleGeometry Rect="0,0,32,32" RadiusX="6" RadiusY="6"/></Border.Clip><Image x:Name="AlbumCoverImage" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality"/></Border><local:OrbyArtworkProgress x:Name="AlbumProgress" Width="32" Height="32" IsHitTestVisible="False"/></Grid></ControlTemplate></Button.Template>
                     </Button>
     </Grid>
 </Window>
@@ -251,7 +257,9 @@ function Set-OrbitExpanded {
     if($script:waterPriority){$Expand=$false}
     if(-not $Expand -and $script:orbyEventMode -and -not $script:waterPriority){return}
     if ($script:expanded -eq $Expand) { return }
-    if(-not $Expand -and $script:referenceControls) {
+    # Keep the outgoing page intact while closing. Reset it before the next
+    # opening only when needed, instead of rebuilding Home during collapse.
+    if($Expand -and $script:referenceControls -and $script:compactMenuPage -and $script:compactMenuPage -ne 'home') {
         Set-OrbyHomePage 'home'
     }
     $script:expanded = $Expand
@@ -262,9 +270,10 @@ function Set-OrbitExpanded {
     if($script:avatarRenderer){[void]$script:avatarRenderer.Trigger($(if($Expand){'notch_open'}else{'notch_close'}))}
     if($script:referenceRenderer){[void]$script:referenceRenderer.Trigger($(if($Expand){'notch_open'}else{'notch_close'}))}
     $expandedArea.Visibility='Visible'
-    [OrbyMotion.Driver]::Move($notch,[OrbyLiquidSurface]::MorphProperty,$(if($Expand){if($script:orbyEventMode -and $script:orbyEventMode -ne 'drop'){1.0}else{1.0}}else{0.0}),$Expand)
+    if($script:orbySettings.ReducedMotion -or -not [Windows.SystemParameters]::ClientAreaAnimation){[OrbyMotion.Driver]::Snap($notch,[OrbyLiquidSurface]::MorphProperty,[double]$Expand)}else{[OrbyMotion.Driver]::Move($notch,[OrbyLiquidSurface]::MorphProperty,[double]$Expand,$Expand)}
     Set-OrbyCompactLayer ($window.FindName('CompactHeader')) $Expand
     Invoke-OrbyMotion $expandedArea ([Windows.UIElement]::OpacityProperty) $(if($Expand){1}else{0}) 0.16
+    if(Test-Path function:Update-OrbyCompactTask){Update-OrbyCompactTask}
 
 }
 
@@ -881,7 +890,7 @@ $script:desktopPanel=New-OrbyPanel
 $script:orbyTaskAlerts=@{}
 if ($PreviewDirectory) {
     [void][IO.Directory]::CreateDirectory($PreviewDirectory)
-    $window.Width=640;$window.Height=384;$notch.Morph=1
+    $window.Width=668;$window.Height=384;$notch.Morph=1
     $expandedArea.Visibility='Visible';$expandedArea.Opacity=1
     $stateText.Text='Orby';$detailText.Text='Your desktop companion';$statusTiny.Text='HOME'
     Update-OrbitAvatar $script:orbParts 'idle' 0
@@ -889,10 +898,10 @@ if ($PreviewDirectory) {
     $window.FindName('CompactHeader').Opacity=0
     for ($page=0;$page -lt 1;$page++) {
         $script:desktopControls.DesktopTabs.SelectedIndex=$page
-        $window.Content.Measure((New-Object Windows.Size 640,384))
-        $window.Content.Arrange((New-Object Windows.Rect 0,0,640,384))
+        $window.Content.Measure((New-Object Windows.Size 668,384))
+        $window.Content.Arrange((New-Object Windows.Rect 0,0,668,384))
         $window.Content.UpdateLayout()
-        $bitmap=New-Object Windows.Media.Imaging.RenderTargetBitmap 640,194,96,96,([Windows.Media.PixelFormats]::Pbgra32)
+        $bitmap=New-Object Windows.Media.Imaging.RenderTargetBitmap 668,194,96,96,([Windows.Media.PixelFormats]::Pbgra32)
         $bitmap.Render($window.Content)
         $encoder=New-Object Windows.Media.Imaging.PngBitmapEncoder
         $encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
@@ -901,7 +910,7 @@ if ($PreviewDirectory) {
     }
     $notch.Morph=0;$window.FindName('CompactHeader').Opacity=1;$expandedArea.Opacity=0
     $window.Content.UpdateLayout()
-    $bitmap=New-Object Windows.Media.Imaging.RenderTargetBitmap 640,80,96,96,([Windows.Media.PixelFormats]::Pbgra32)
+    $bitmap=New-Object Windows.Media.Imaging.RenderTargetBitmap 668,80,96,96,([Windows.Media.PixelFormats]::Pbgra32)
     $bitmap.Render($window.Content)
     $encoder=New-Object Windows.Media.Imaging.PngBitmapEncoder
     $encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
@@ -913,11 +922,11 @@ if ($PreviewDirectory) {
 
 function Set-PetState {
     param([string]$State)
-    if($script:orbySettings.PrimaryProvider -and $script:orbySettings.PrimaryProvider -ne 'chatgpt'){return}
+
     if($script:greetingActive -and $State -in @('idle','open')){return}
     if($State -ne $script:petState -and $State -in @('success','attention','error')){Invoke-OrbySound $State}
     $script:petState = $State
-    if($script:avatarRenderer){$script:avatarRenderer.SetState($State,$script:chatLogMessage)}
+    if($script:avatarRenderer -and -not $script:waterPriority){$script:avatarRenderer.SetState($State,$script:chatLogMessage)}
     if($script:referenceRenderer){$script:referenceRenderer.SetState($State,$script:chatLogMessage)}
 }
 
@@ -971,7 +980,6 @@ function Set-OrbitState {
 }
 
 function Focus-ChatGpt {
-    if($script:orbySettings.PrimaryProvider -and $script:orbySettings.PrimaryProvider -ne 'chatgpt'){Open-OrbyProvider;return}
     try {
         $el = Find-ChatGptWindow
         if ($null -eq $el) {
@@ -1007,14 +1015,21 @@ function Test-OrbyPointerInside {
     if(-not $source){return $window.IsMouseOver}
     $point=$source.CompositionTarget.TransformFromDevice.Transform((New-Object Windows.Point $cursor.X,$cursor.Y))
     $rect=$notch.Clip.Bounds
-    return ($point.X -ge $window.Left+10+$rect.Left -and $point.X -le $window.Left+10+$rect.Right -and $point.Y -ge $window.Top -and $point.Y -le $window.Top+$rect.Bottom)
+    return $notch.Clip.FillContains([Windows.Point]::new($point.X-$window.Left-($window.Width-$notch.Width)/2,$point.Y-$window.Top))
 }
 $script:hoverExitTimer=New-Object Windows.Threading.DispatcherTimer
 $script:hoverExitTimer.Interval=[timespan]::FromMilliseconds(90)
 $script:hoverExitTimer.Add_Tick({$script:hoverExitTimer.Stop();if(-not (Test-OrbyPointerInside)){Set-OrbitExpanded $false}})
 $window.Add_MouseEnter({if($script:fullscreenHidden){return};$script:hoverExitTimer.Stop();if(-not $script:waterDay -or -not (Get-OrbyWaterTitle)){Set-OrbitExpanded $true}})
 $window.Add_MouseLeave({$script:hoverExitTimer.Start()})
-$window.Add_MouseDoubleClick({ if(-not $script:albumCoverButton.IsMouseOver -and (-not $script:waterDay -or -not (Get-OrbyWaterTitle))){Focus-ChatGpt} })
+$window.Add_MouseDoubleClick({param($sender,$eventArgs)
+ if($eventArgs.Handled -or $script:albumCoverButton.IsMouseOver -or ($script:waterDay -and (Get-OrbyWaterTitle))){return}
+ $avatarHit=$script:orbParts.Root.IsMouseOver -or ($script:miniNotchParts -and $script:miniNotchParts.Root.IsMouseOver)
+ if($avatarHit){
+  $id=if(@($script:compactProviderOrder).Count -and $script:compactProviderOrder[0] -in @('chatgpt','claude','gemini')){$script:compactProviderOrder[0]}elseif($script:companionSelection -in @('chatgpt','claude','gemini')){$script:companionSelection}else{$script:orbySettings.PrimaryProvider}
+  Invoke-OrbySafeAction {Invoke-OrbyAvatarClick $id 2} 'Open AI app';$eventArgs.Handled=$true
+ }
+})
 
 $window.Add_SourceInitialized({
     try {
@@ -1026,11 +1041,11 @@ $window.Add_SourceInitialized({
 })
 
 # Render-paced native animation; no PowerShell callbacks or geometry parsing per frame.
-Add-Type -Path @((Join-Path $PSScriptRoot 'Native-Avatar.cs'),(Join-Path $PSScriptRoot 'Hydration-Avatar.cs'),(Join-Path $PSScriptRoot 'Rendered-Assets.cs'),(Join-Path $PSScriptRoot 'Hydration-Model.cs'),(Join-Path $PSScriptRoot 'Animation-Catalog.cs')) -ReferencedAssemblies @('WindowsBase','PresentationCore','PresentationFramework','System.Xaml')
-$window.Width=640;$window.Height=384
+# Renderer sources are compiled once by Motion.ps1 with the correct private/public catalog.
+$window.Width=668;$window.Height=384
 $script:avatarRenderer=New-Object OrbyAvatarRenderer ($script:orbParts)
 $script:referenceRenderer=New-Object OrbyAvatarRenderer ($script:referenceOrb)
-# Water reminders are excluded from the public edition.
+# Water reminders are excluded from the sharing edition.
 Start-OrbyGreeting
 . (Join-Path $PSScriptRoot 'Task-Avatars.ps1')
 Initialize-OrbyTaskPack
@@ -1042,13 +1057,16 @@ Initialize-OrbyHomeBuddies
 Initialize-OrbyAmbientMotion
 . (Join-Path $PSScriptRoot 'Fullscreen-Guard.ps1')
 . (Join-Path $PSScriptRoot 'Providers.ps1')
+. (Join-Path $PSScriptRoot 'Compact-Menus.ps1')
+. (Join-Path $PSScriptRoot 'Home-Dashboard.ps1') -NoNetwork:$PerformanceCheck
 Initialize-OrbyAccountUsage
+Update-OrbyAgents # Warm cached quota layout before the first menu click.
 $window.Add_Closed({Stop-OrbyAmbientMotion;Stop-OrbyHomeBuddies;Stop-OrbyMinis})
 $window.Add_Closed({Stop-OrbyTaskPack})
 $script:displayHz=[OrbyDisplay]::RefreshHz(([Windows.Forms.Screen]::FromHandle([Windows.Interop.WindowInteropHelper]::new($window).Handle)).DeviceName)
 [OrbyRefreshClock]::Configure($script:displayHz)
 Write-OrbitLog ('DISPLAY refreshHz='+$script:displayHz+' frameLoop=CompositionTarget.Rendering tier='+([Windows.Media.RenderCapability]::Tier -shr 16))
-$window.Add_Closed({if($script:greetingTimer){$script:greetingTimer.Stop()};if($script:greetingFinishTimer){$script:greetingFinishTimer.Stop()};Write-OrbitLog ('RENDER observedFps='+[math]::Round($script:avatarRenderer.ObservedFps,1)+' frames='+$script:avatarRenderer.Frames+' p95FrameMs='+[math]::Round($script:avatarRenderer.P95FrameMs,1)+' maxGapMs='+[math]::Round($script:avatarRenderer.MaxFrameGapMs,1));[OrbyRefreshClock]::Stop();$script:avatarRenderer.Dispose();$script:referenceRenderer.Dispose();if($script:toolsWindow){$script:toolsWindow.Close()};if($script:animationWindow){$script:animationWindow.Close()}})
+$window.Add_Closed({Write-OrbitLog ('MOTION frames='+[OrbyMotion.Driver]::FrameCount+' maxGapMs='+[math]::Round([OrbyMotion.Driver]::MaxFrameGapMs,1));[OrbyMotion.Transitions]::StopAll();[OrbyMotion.Driver]::StopAll();if($script:greetingTimer){$script:greetingTimer.Stop()};if($script:greetingFinishTimer){$script:greetingFinishTimer.Stop()};Write-OrbitLog ('RENDER observedFps='+[math]::Round($script:avatarRenderer.ObservedFps,1)+' frames='+$script:avatarRenderer.Frames+' p95FrameMs='+[math]::Round($script:avatarRenderer.P95FrameMs,1)+' maxGapMs='+[math]::Round($script:avatarRenderer.MaxFrameGapMs,1));[OrbyRefreshClock]::Stop();$script:avatarRenderer.Dispose();$script:referenceRenderer.Dispose();if($script:toolsWindow){$script:toolsWindow.Close()};if($script:animationWindow){$script:animationWindow.Close()}})
 
 if($PerformanceCheck){
  $script:perfWatch=[Diagnostics.Stopwatch]::StartNew();$script:perfPhase=0
@@ -1056,10 +1074,149 @@ if($PerformanceCheck){
  $script:perfTimer.Interval=[timespan]::FromSeconds(2)
  $script:perfTimer.Add_Tick({
   $script:perfPhase++
-  if($script:perfPhase -ge 10){$script:perfTimer.Stop();$window.Close();return}
+  if($script:perfPhase -ge 21){$script:perfTimer.Stop();$script:orbyQuitMenuItem.PerformClick();return}
   Set-OrbitExpanded (($script:perfPhase%2) -eq 1)
-  if($script:perfPhase -in @(1,5)){Set-OrbyHomePage 'agents'}
-  if($script:perfPhase -eq 7){Set-OrbyHomePage 'music'}
+    if($script:perfPhase -in @(1,3,5)){
+   $id=switch($script:perfPhase){1{'chatgpt'}3{'claude'}5{'gemini'}}
+   $script:orbySettings.ProviderEnabled='chatgpt,claude,gemini'
+   Select-OrbyCompanion $id;Set-OrbyAIChooser $true
+   if($script:companionSelection -ne $id -or $script:compactMenuPage -ne 'home'){throw 'Companion click selected the wrong AI or left the main tab'}
+   if($script:providerCards[$id].Controls.InlineUsage.Visibility -ne 'Visible'){throw 'Main companion usage bars are hidden'}
+   Write-OrbitLog ('CLICK CHECK provider='+$id+' passed')
+  }
+    if($script:perfPhase -eq 6){Invoke-OrbySafeAction {throw 'Simulated recoverable action failure'} 'Recovery test';Write-OrbitLog 'RECOVERY CHECK safe action returned.'}
+    if($script:perfPhase -eq 7){
+   Set-OrbyHomePage 'music';Write-OrbitLog 'RECOVERY CHECK music tab still works.'
+   if($script:orbyPrivateWater){Show-OrbyAnimations;$script:animationWindow.FindName('WaterSip').RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent));if($script:previewAnimationRenderer.ActiveId -ne 'water_sip'){throw 'Private water click failed'};Write-OrbitLog 'PRIVATE WATER CHECK matte preview works.';$script:animationWindow.Close()}
+  }
+  if($script:perfPhase -eq 8){
+   $script:recoveryProbe=[Windows.Controls.Button]::new();$script:recoveryProbe.Add_Click({throw 'Simulated unhandled UI event failure'})
+   $window.Dispatcher.BeginInvoke([Action]{$script:recoveryProbe.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent))}) | Out-Null
+  }
+  if($script:perfPhase -eq 9){Select-OrbyCompanion 'claude';Write-OrbitLog 'RECOVERY CHECK tab works after dispatcher error.'}
+  if($script:perfPhase -eq 10){
+   $script:dropCheckFile=Join-Path $logDir 'drop-fixture.txt';[IO.File]::WriteAllText($script:dropCheckFile,'Native-host fixture only; never sent.')
+   if(-not (Set-OrbyDroppedFiles @($script:dropCheckFile))){throw 'Native file drop rejected'}
+   Select-OrbyDropProvider 'claude'
+   if($script:dropControls.DropProviders.Children.Count -ne 3 -or $expandedArea.Height -ne 322){throw 'Native drop chooser or layout failed'}
+   Write-OrbitLog 'DROP CHECK chooser and optional prompt passed.'
+  }
+  if($script:perfPhase -eq 11){
+   Complete-OrbyDropHandoff ([pscustomobject]@{Sent=$true;Message='Local result fixture'})
+   if($script:dropBusy -or $script:dropPanel.Visibility -eq 'Visible'){throw 'Native send result left composer stuck'}
+   Write-OrbitLog 'DROP CHECK success returned Home.'
+  }
+  if($script:perfPhase -eq 12){
+   $script:orbySettings.ProviderEnabled='gemini';[void](Set-OrbyDroppedFiles @($script:dropCheckFile));Select-OrbyDropProvider 'gemini'
+   if($script:orbyEventMode -ne 'drop' -or $script:dropPanel.Visibility -ne 'Visible'){throw 'Gemini-only drop was blocked by ChatGPT connection'}
+   Write-OrbitLog 'DROP CHECK Gemini-only connection passed.'
+  }
+  if($script:perfPhase -eq 13){
+   Close-OrbyDropComposer
+   if($script:dropBusy -or $script:dropHandle -or $script:orbyEventMode -or $script:compactMenuPage -ne 'home'){throw 'Native Close did not restore Home'}
+   Write-OrbitLog 'DROP CHECK Close returned Home.'
+  }
+  if($script:perfPhase -in @(14,15)){
+   $script:orbySettings.ProviderEnabled='chatgpt,claude,gemini'
+   $script:orbyActiveTasks=@(
+    [pscustomobject]@{Id='native-inspector-main';Provider='chatgpt';State='working';Title='Main fixture task';Action='Checking the first task'},
+    [pscustomobject]@{Id='native-inspector-second';Provider='chatgpt';State='working';Title='Second fixture task';Action='Checking secondary task details'})
+   Select-OrbyCompanion 'chatgpt';Set-OrbitExpanded $true
+   $card=$script:providerCards.chatgpt
+   $card.Buddies[0].Host.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent))
+   if($card.SelectedTaskId -ne 'native-inspector-second' -or $card.Controls.Title.Text -ne 'Second fixture task' -or -not $card.Buddies[0].Renderer.ShowStatusDot -or $card.Buddies[0].Host.Width -ne 62){throw 'Native secondary task click, size or orbit failed'}
+   Write-OrbitLog 'TASK CHECK secondary task click, size and blue orbit passed.'
+   if($script:perfPhase -eq 15){
+    $card.Controls.TaskListButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent))
+    if(-not $card.Controls.TaskListButton.ContextMenu.IsOpen -or $card.Controls.TaskListButton.ContextMenu.Items.Count -ne 2){throw 'Native task menu failed'}
+    Set-OrbitExpanded $false
+    if(-not $script:expanded){throw 'Task popup collapsed the notch'}
+    Close-OrbyTaskMenus;Write-OrbitLog 'TASK CHECK task list and hover guard passed.'
+   }
+  }
+  if($script:perfPhase -eq 16){
+   $script:orbyActiveTasks=@([pscustomobject]@{Id='native-inspector-main';Provider='chatgpt';State='working';Title='Main fixture task';Action='Checking the first task'})
+   Update-OrbyMultiProvider
+   if($script:providerCards.chatgpt.SelectedTaskId -ne 'native-inspector-main'){throw 'Completed task retained stale selection'}
+   Write-OrbitLog 'TASK CHECK completed selection returned to main task.'
+  }
+  if($script:perfPhase -eq 17){
+   Set-OrbyHomePage 'music'
+   if((Test-OrbyTaskMenuOpen) -or -not $script:providerCards.chatgpt.Renderer.Suspended){throw 'Task inspector cleanup failed'}
+   Write-OrbitLog 'TASK CHECK hidden page cleanup passed.'
+  }
+  if($script:perfPhase -eq 18){
+   $script:orbySettings.ProviderEnabled='chatgpt';$script:orbyActiveTasks=@([pscustomobject]@{Id='native-home-main';Provider='chatgpt';State='working';Title='Home check fixture';Action='Checking the overview'})
+   $script:orbySettings.ReducedMotion=$true;Set-OrbitExpanded $true;Set-OrbyHomePage 'home';$window.UpdateLayout()
+   if($script:homeDashboard.Visibility -ne 'Visible' -or $script:sharedCompanionView.Visibility -ne 'Collapsed' -or $script:compactMenus.Height -ne 344 -or $notch.Height -lt $script:compactMenus.Height+14){throw 'Native Home dashboard layout failed'}
+   if($script:homeControls.ContainsKey('WeatherCard') -or (Test-Path function:Start-OrbyHomeForecast)){throw 'Removed Home weather is still present'}
+   if($script:homeProviderTiles.chatgpt.Count.Text -ne '1 task'){throw 'Native Home lost primary activity'}
+   Write-OrbitLog 'HOME CHECK overview, task count, neutral cards, no weather and native bounds passed.'
+   $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.Width,[int]$window.Height,96,96,[Windows.Media.PixelFormats]::Pbgra32);$bitmap.Render($window)
+   $encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap));$stream=[IO.File]::Create((Join-Path $logDir 'native-home.png'));try{$encoder.Save($stream)}finally{$stream.Dispose()}
+   $script:orbySettings.ReducedMotion=$false
+   if($script:personalWaterCard){
+    $script:personalTestTime=[datetime]::Now;function Get-OrbyPersonalNow {return $script:personalTestTime}
+    $before=[int]$script:personalWater.TotalMl;$originalSize=$script:orbySettings.NotchSize;$script:orbySettings.ReducedMotion=$true
+    $script:orbyEventMode='';$script:chatLogState='working';$script:greetingActive=$false
+    foreach($size in @('default','mini')){
+     $script:orbySettings.NotchSize=$size;$script:personalWater.NextReminder=(Get-OrbyPersonalNow).AddMinutes(-1).ToString('o');Invoke-OrbyPersonalHomeTick;$window.UpdateLayout()
+     if(-not $script:personalReminderPending -or -not $script:waterPriority -or $script:expanded -or $script:waterPrompt.Visibility -ne 'Visible' -or $notch.MiniMode){throw 'Private reminder must show Drink/Skip in the expanded compact header for both sizes'}
+     if($script:personalWater.TotalMl -ne $before -or $script:avatarRenderer.ActiveId -ne 'water_reminder'){throw 'Reminder changed intake or lost its native animation'}
+     $t=$script:avatarRenderer.TimeSeconds;$script:avatarRenderer.Draw($t+5.1)
+     if($script:avatarRenderer.ActiveId -ne 'water_wait'){throw 'Reminder animation did not advance to its persistent waiting pose'}
+     $script:avatarRenderer.AdvanceIdle($t+400,$true);Update-OrbyMultiProvider;Update-OrbyCompactTask
+     if($script:avatarRenderer.ActiveId -ne 'water_wait' -or $script:waterPrompt.Visibility -ne 'Visible'){throw 'Provider refresh or AFK erased the pending reminder'}
+     foreach($button in @($script:waterDrinkButton,$script:waterSkipButton)){
+      $point=$button.TranslatePoint([Windows.Point]::new(0,0),$window.FindName('CompactHeader'))
+      if($point.X -lt 0 -or $point.Y -lt 0 -or $point.Y+$button.ActualHeight -gt 48){throw 'Water action is outside the visible notch'}
+     }
+     $bitmap=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.Width,[int]$window.Height,96,96,[Windows.Media.PixelFormats]::Pbgra32);$bitmap.Render($window)
+     $encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($bitmap));$stream=[IO.File]::Create((Join-Path $logDir ('water-prompt-'+$size+'.png')));try{$encoder.Save($stream)}finally{$stream.Dispose()}
+     $script:waterSkipButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent))
+     if($script:personalReminderPending -or $script:personalWater.TotalMl -ne $before -or $script:avatarRenderer.ActiveId -ne 'water_skip' -or $script:waterPrompt.Visibility -ne 'Collapsed'){throw 'Skip must dismiss the prompt, animate and never log water'}
+     if([datetime]::Parse($script:personalWater.NextReminder) -ne (Get-OrbyPersonalNow).AddMinutes($script:personalPreferences.IntervalMinutes)){throw 'Skip did not schedule the next normal reminder'}
+     $script:personalTestTime=$script:personalTestTime.AddSeconds(4);Invoke-OrbyPersonalHomeTick
+     if($script:waterPriority -or ($size -eq 'mini' -and -not $notch.MiniMode)){throw 'Skip did not restore the original compact size'}
+    }
+    $script:personalWater.NextReminder=(Get-OrbyPersonalNow).AddMinutes(-1).ToString('o');Invoke-OrbyPersonalHomeTick
+    $script:waterDrinkButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent));$script:waterDrinkButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Primitives.ButtonBase]::ClickEvent))
+    if($script:personalReminderPending -or $script:personalWater.TotalMl -ne $before+$script:personalPreferences.DrinkMl -or $script:avatarRenderer.ActiveId -ne 'water_reveal'){throw 'Drink must log exactly once and start the bottle sequence'}
+    $t=$script:avatarRenderer.TimeSeconds;$script:avatarRenderer.Draw($t+.8);if($script:avatarRenderer.ActiveId -ne 'water_sip'){throw 'Bottle reveal did not transition into the drinking animation'}
+    $script:avatarRenderer.Draw($t+2.3);if($script:avatarRenderer.ActiveId -ne 'water_progress' -or -not $script:avatarRenderer.WaterVisible){throw 'Drinking did not transition into bottle progress'}
+    $script:personalTestTime=$script:personalTestTime.AddSeconds(9);Invoke-OrbyPersonalHomeTick
+    if($script:waterPriority -or $script:avatarRenderer.ActiveId.StartsWith('water_')){throw 'Drink animation did not return to normal task activity'}
+    $afterDrink=[int]$script:personalWater.TotalMl;$script:personalWater.NextReminder=(Get-OrbyPersonalNow).AddMinutes(-1).ToString('o');Invoke-OrbyPersonalHomeTick
+    $script:chatLogState='attention';Invoke-OrbyPersonalHomeTick
+    if(-not $script:personalReminderPending -or $script:waterPriority -or $script:waterPrompt.Visibility -ne 'Collapsed'){throw 'Water reminder obscures a newer AI question'}
+    $script:chatLogState='working';Invoke-OrbyPersonalHomeTick
+    if($script:waterPrompt.Visibility -ne 'Visible'){throw 'Deferred reminder did not return after the question cleared'}
+    foreach($flag in @('dropBusy','fullscreenHidden')){
+     Set-Variable -Scope Script -Name $flag -Value $true;Invoke-OrbyPersonalHomeTick
+     if($script:waterPriority -or $script:waterPrompt.Visibility -ne 'Collapsed'){throw 'Reminder obscures a file handoff or fullscreen app'}
+     Set-Variable -Scope Script -Name $flag -Value $false;Invoke-OrbyPersonalHomeTick
+     if(-not $script:waterPriority -or $script:waterPrompt.Visibility -ne 'Visible'){throw 'Deferred reminder was lost'}
+    }
+    Snooze-OrbyPersonalReminder
+    if($script:personalReminderPending -or $script:waterPriority -or $script:personalWater.TotalMl -ne $afterDrink -or [datetime]::Parse($script:personalWater.NextReminder) -ne (Get-OrbyPersonalNow).AddMinutes(10)){throw 'Snooze changed intake or left the notch stuck'}
+    $saved=Get-Content -LiteralPath (Join-Path $logDir 'water-progress.json') -Raw | ConvertFrom-Json
+    if($saved.TotalMl -ne $afterDrink){throw 'Notch Drink was not persisted in the Home log'}
+    $script:orbySettings.NotchSize=$originalSize;$script:orbySettings.ReducedMotion=$false;Update-OrbyCompactTask
+    Write-OrbitLog 'PRIVATE HOME CHECK notch Drink/Skip, persistent animation, mini/default sizes, reveal/sip/progress, duplicate clicks, permission/fullscreen/drop deferral, no automatic intake and snooze passed.'
+   }elseif(Test-Path function:Invoke-OrbyPersonalHomeTick){throw 'Private reminders leaked into public Home'}
+  }
+  if($script:perfPhase -eq 19){
+   Set-OrbyAIChooser $true
+   if($script:dashboardRoute -ne 'ai' -or -not $script:aiChooserOpen -or $script:compactMenus.Width -ne 596){throw 'Native separate AI route failed'}
+   Set-OrbyHomePage 'home'
+   if($script:aiChooserOpen -or $script:homeDashboard.Visibility -ne 'Visible'){throw 'Native return to Home failed'}
+   Write-OrbitLog 'HOME CHECK separate AI chooser and return passed.'
+  }
+  if($script:perfPhase -eq 20){
+   $script:orbyActiveTasks=@();Update-OrbyMultiProvider
+   foreach($tile in $script:homeProviderTiles.Values){if(-not $tile.Renderer.Suspended){throw 'Hidden Home animation kept rendering'}}
+   Write-OrbitLog 'HOME CHECK hidden animation cleanup passed.'
+  }
  })
  $window.Add_ContentRendered({$script:perfTimer.Start()})
 }
@@ -1070,15 +1227,26 @@ $scanTimer = New-Object Windows.Threading.DispatcherTimer ([Windows.Threading.Di
 $scanTimer.Interval = [TimeSpan]::FromMilliseconds(900)
 $scanTick = {
     try {
+        if([OrbyMotion.Driver]::PendingCount -gt 0){
+            if(-not $script:motionScanWait){$script:motionScanWait=[Diagnostics.Stopwatch]::StartNew()}
+            if($script:motionScanWait.ElapsedMilliseconds -lt 700){$scanTimer.Interval=[timespan]::FromMilliseconds(50);return}
+        }
+        $script:motionScanWait=$null;$scanTimer.Interval=[timespan]::FromMilliseconds(900)
         $script:scanCounter++
         $scanWatch=[Diagnostics.Stopwatch]::StartNew()
         $script:avatarRenderer.EyeEffects=$script:referenceRenderer.EyeEffects=[bool]$script:orbySettings.EyeEffects
         $script:avatarRenderer.ReducedMotion=$script:referenceRenderer.ReducedMotion=([bool]$script:orbySettings.ReducedMotion -or -not [Windows.SystemParameters]::ClientAreaAnimation)
+        if($script:avatarRenderer.ReducedMotion -and -not $script:motionReducedApplied){
+            [OrbyMotion.Driver]::Snap($notch,[OrbyLiquidSurface]::MorphProperty,[double][bool]$script:expanded)
+            $notch.BeginAnimation([OrbyLiquidSurface]::ExpandedHeightProperty,$null)
+            Set-OrbyAlbumPlacement ([bool]$script:expanded) $false
+        }
+        $script:motionReducedApplied=$script:avatarRenderer.ReducedMotion
         Update-OrbyShelf
         Update-OrbyLocal
         Update-OrbyAlbumArt
         Update-OrbyPetSounds
-        $musicPlaying=[bool]($script:orbySettings.Music -and (($script:orbyShared.SpotifyMedia -and $script:orbyShared.SpotifyMedia.Playing) -or ($script:orbyShared.Media -and $script:orbyShared.Media.Playing)))
+        $musicPlaying=[bool]($script:orbySettings.Music -and (($script:orbyShared.SelectedMusic -and $script:orbyShared.SelectedMusic.Playing) -or ($script:orbyShared.Media -and $script:orbyShared.Media.Playing)))
         if($script:avatarRenderer){$script:avatarRenderer.MusicPlaying=$musicPlaying}
         if($script:referenceRenderer){$script:referenceRenderer.MusicPlaying=$musicPlaying}
         Sync-OfficialTaskFeed
@@ -1103,6 +1271,8 @@ $scanTick = {
         $script:chatConnectionPresent=[bool]($uiFresh -and $ui.Connected)
         $title=if($uiFresh){$ui.Title}else{''}
         $snapshot=if($uiFresh){$ui.Snapshot}else{[pscustomobject]@{Working=$false;Failure=$false;FailureText='';InputRequest='';Stopped=$false;StoppedText='';Mode='CHAT';Activity='';Elapsed='';Evidence=''}}
+        Update-OrbyApprovalBridge
+        Apply-OrbyBlockingInput $snapshot $script:approvalRequest ([bool]($script:approvalRequestAt -and ([datetime]::UtcNow-$script:approvalRequestAt).TotalSeconds -lt 5))
         # Regular ChatGPT uses a separate UI tracker. Work/Codex feed state
         # cannot suppress these visible normal-chat transitions.
         $normalChatActive = Update-OrbyNormalChatTracker $chat $snapshot
@@ -1144,7 +1314,7 @@ $scanTick = {
             $script:needsText = ''
         }
 
-        # Starting/resuming work always clears the amber input state.
+        # Starting/resuming work clears amber input only when no blocking card is visible.
         if ($snapshot.Working) {
             $script:needsInput = $false
             $script:needsText = ''
@@ -1256,9 +1426,9 @@ $scanTick = {
             Set-OrbitState ('orby-'+$desktopStatus.Tiny) $desktopStatus.Title $desktopStatus.Detail $desktopStatus.Tiny $desktopStatus.Color 'Orby connections' $desktopStatus.Detail 'DESKTOP' ($desktopStatus.Pet -in @('working','music')) $desktopStatus.Pet
         }
         Update-OrbyEventCard
+        Update-OrbyProviderState
         Update-OrbyCompactTask
         Update-OrbyTaskPack
-        Update-OrbyProviderState
         if ($script:expanded) { Update-OrbyHome };if($script:toolsWindow -and $script:toolsWindow.IsVisible){Update-OrbyPanel}
         if($script:scanCounter%12 -eq 0){
             $currentHz=[OrbyDisplay]::RefreshHz(([Windows.Forms.Screen]::FromHandle([Windows.Interop.WindowInteropHelper]::new($window).Handle)).DeviceName)
@@ -1290,11 +1460,13 @@ try {
     Write-OrbitLog 'Animation and detector timers started.'
     $orbyApplication=[Windows.Application]::Current
     if(-not $orbyApplication){$orbyApplication=[Windows.Application]::new()}
+    Initialize-OrbyUiRecovery $orbyApplication
     $orbyApplication.ShutdownMode=[Windows.ShutdownMode]::OnMainWindowClose
     $null=$orbyApplication.Run($window)
     Write-OrbitLog 'Window closed normally.'
     exit 0
 } catch {
+    Request-OrbyQuit
     Fail-Orbit "Orbit crashed: $($_.Exception.Message)"
 }
 

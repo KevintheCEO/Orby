@@ -1,4 +1,4 @@
-function Set-OrbyCompactLayer {
+﻿function Set-OrbyCompactLayer {
  param([Windows.UIElement]$Header,[bool]$Expanded)
  if($Expanded){
   # Remove the old fade clock before the expanded surface is drawn.

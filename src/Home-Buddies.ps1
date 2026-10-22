@@ -12,7 +12,7 @@
  }
 }
 function Update-OrbyHomeBuddies {
- if(Get-Command Update-OrbyAmbientMotion -ErrorAction SilentlyContinue){Update-OrbyAmbientMotion}
+ if(Test-Path function:Update-OrbyAmbientMotion){Update-OrbyAmbientMotion}
  $tasks=@($script:orbyActiveTasks)
  for($i=0;$i -lt $script:homeBuddies.Count;$i++){
   $buddy=$script:homeBuddies[$i];$buddy.Renderer.ReducedMotion=[bool]$script:orbySettings.ReducedMotion -or -not [Windows.SystemParameters]::ClientAreaAnimation

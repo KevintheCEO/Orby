@@ -1,4 +1,4 @@
-Add-Type -TypeDefinition @"
+﻿if(-not ('OrbyChatWindow' -as [type])){Add-Type -TypeDefinition @"
 using System;using System.Collections.Generic;using System.Runtime.InteropServices;
 public static class OrbyChatWindow {
  public delegate bool Child(IntPtr h,IntPtr p);
@@ -6,14 +6,33 @@ public static class OrbyChatWindow {
  [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")]public static extern bool IsIconic(IntPtr h);
  [DllImport("user32.dll")]public static extern bool ShowWindowAsync(IntPtr h,int n);
+ [DllImport("kernel32.dll")]static extern uint GetCurrentThreadId();
+ [DllImport("user32.dll")]static extern uint GetWindowThreadProcessId(IntPtr h,out uint process);
+ [DllImport("user32.dll")]static extern bool AttachThreadInput(uint from,uint to,bool attach);
+ [DllImport("user32.dll")]static extern bool BringWindowToTop(IntPtr h);
  [DllImport("user32.dll")]static extern bool EnumChildWindows(IntPtr h,Child callback,IntPtr p);
  public static IntPtr[] Children(IntPtr h){var list=new List<IntPtr>();EnumChildWindows(h,(child,p)=>{list.Add(child);return true;},IntPtr.Zero);return list.ToArray();}
  [DllImport("user32.dll")]static extern IntPtr GetWindow(IntPtr h,uint cmd);
  [DllImport("user32.dll")]static extern IntPtr GetAncestor(IntPtr h,uint flags);
  public static bool OwnedBy(IntPtr h,IntPtr app){for(int i=0;i<16 && h!=IntPtr.Zero;i++){h=GetWindow(h,4);if(h==app || GetAncestor(h,2)==app)return true;}return false;}
- public static bool Activate(IntPtr h){if(IsIconic(h))ShowWindowAsync(h,9);return SetForegroundWindow(h);}
+ public static bool Activate(IntPtr h){
+  if(IsIconic(h))ShowWindowAsync(h,9);
+  if(SetForegroundWindow(h))return true;
+  // Explicit handoff activation only. Later paste/send checks never steal focus back.
+  uint ignored;uint current=GetCurrentThreadId(),front=GetWindowThreadProcessId(GetForegroundWindow(),out ignored),target=GetWindowThreadProcessId(h,out ignored);
+  bool joinedFront=false,joinedTarget=false;
+  try{
+   if(front!=0&&front!=current)joinedFront=AttachThreadInput(current,front,true);
+   if(target!=0&&target!=current&&target!=front)joinedTarget=AttachThreadInput(current,target,true);
+   BringWindowToTop(h);SetForegroundWindow(h);return GetForegroundWindow()==h;
+  }finally{
+   if(joinedTarget)AttachThreadInput(current,target,false);
+   if(joinedFront)AttachThreadInput(current,front,false);
+  }
+ }
 }
 "@
+}
 function Get-OrbyChatRoots {
  param($Root)
  $roots=New-Object Collections.Generic.List[object];$roots.Add($Root)

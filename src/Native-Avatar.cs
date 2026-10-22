@@ -15,6 +15,10 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
  readonly SolidColorBrush statusBrush=new SolidColorBrush(Colors.Gray);
  double statusFrame=-1;
  public bool EyeEffects=true;
+ double neighborStart=-100,neighborDirection;
+ public bool CanGlanceAtNeighbor{get{return !Suspended&&!ReducedMotion&&!WaterPriority&&!sleeping&&(state=="idle"||state=="open")&&active!=null&&active.Id=="idle_neutral";}}
+ public bool GlanceAtNeighbor(double direction){if(!CanGlanceAtNeighbor)return false;neighborStart=time.Elapsed.TotalSeconds;neighborDirection=Math.Max(-1,Math.Min(1,direction));nextIdleAt=Math.Max(nextIdleAt,neighborStart+3);return true;}
+ public double NeighborEyeOffset{get;private set;}
  string lastEyeStyle="";
  public static readonly string[] EyeStyles={"star_eyes","eyes_nightlight","eyes_ocean","eyes_lilac","eyes_sunset","eyes_sleepy"};
  public OrbyAvatarRenderer SyncWith;
@@ -43,7 +47,7 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
  double nextThinkingAt;
  public double NextThinkingAt{get{return nextThinkingAt;}}
  public void AdvanceThinking(double now){
-  if(ReducedMotion || state!="working" || !(action.Contains("thinking")||action.Contains("reasoning")) || now<nextThinkingAt || overrideUntil>now)return;
+  if(WaterPriority || ReducedMotion || state!="working" || !(action.Contains("thinking")||action.Contains("reasoning")) || now<nextThinkingAt || overrideUntil>now)return;
   int i=personality.Next(ThinkingGestures.Length);
   if(ThinkingGestures[i]==active.Id)i=(i+1)%ThinkingGestures.Length;
   baseId=ThinkingGestures[i];active=Catalog.ById[baseId];clipStart=now;nextThinkingAt=now+12+personality.NextDouble()*12;ClearParticles();
@@ -102,23 +106,23 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
   BuildRenderedDetails((Canvas)face);
   // Decode prop textures before the first composition frame, avoiding an animation hitch.
   BuildWaterBottle();
-  active=Catalog.ById["startup_boot"];clipStart=time.Elapsed.TotalSeconds;nextIdleAt=clipStart+8+personality.NextDouble()*8;
+  active=Catalog.ById["startup_boot"];clipStart=time.Elapsed.TotalSeconds;nextIdleAt=clipStart+8+personality.NextDouble()*8;nextBlink=clipStart+1.5+personality.NextDouble()*3;
   CompositionTarget.Rendering+=Render;
  }
  public void SetState(string value,string text){
   // Open and idle share the same pet state; detector polls must not restart its rest timer.
-  if(value=="open")value="idle";
+  if(value=="open")value="idle";bool waking=state=="sleep"&&value=="idle";
   bool keepWater=active!=null&&active.Id.StartsWith("water_")&&(WaterPriority||(value!="attention"&&value!="error"));
   Clip waterClip=active;double waterStart=clipStart,waterOverride=overrideUntil;
   string category=value=="working"?((text??"").ToLowerInvariant().Contains("think")||(text??"").ToLowerInvariant().Contains("reason")?"thinking":(text??"").ToLowerInvariant().Contains("search")||(text??"").ToLowerInvariant().Contains("read")||(text??"").ToLowerInvariant().Contains("inspect")?"search":(text??"").ToLowerInvariant().Contains("command")?"command":"working"):"";string key=value+"|"+category;if(key==stateKey)return;stateKey=key;state=value;action=(text??"").ToLowerInvariant();
   switch(state){
    case "working":baseId=action.Contains("thinking")||action.Contains("reasoning")?ThinkingGestures[personality.Next(ThinkingGestures.Length)]:action.Contains("search")||action.Contains("read")||action.Contains("inspect")?"thinking_search":action.Contains("command")?"working_fast":"working_normal";break;
    case "attention":baseId="waiting_user";break;case "success":baseId="task_complete";break;case "error":baseId="error_failure";break;
-   case "stopped":baseId="stopped_cancelled";break;case "paused":baseId="paused_idle";break;case "offline":baseId="offline_idle";break;
+   case "sleep":baseId="sleep_afk";break;case "stopped":baseId="stopped_cancelled";break;case "paused":baseId="paused_idle";break;case "offline":baseId="offline_idle";break;
    case "music":baseId="music_mode";break;case "notification":baseId="notification";break;default:baseId="idle_neutral";break;
   }
-  sleeping=false;overrideUntil=0;active=Catalog.ById[baseId];clipStart=time.Elapsed.TotalSeconds;nextIdleAt=clipStart+8+personality.NextDouble()*8;nextThinkingAt=clipStart+10+personality.NextDouble()*8;ClearParticles();
-  if(keepWater){active=waterClip;clipStart=waterStart;overrideUntil=waterOverride;}
+  sleeping=false;overrideUntil=0;active=Catalog.ById[waking&&!ReducedMotion?"wake_up":baseId];clipStart=time.Elapsed.TotalSeconds;nextIdleAt=clipStart+8+personality.NextDouble()*8;nextThinkingAt=clipStart+10+personality.NextDouble()*8;ClearParticles();
+  if(keepWater){active=waterClip;clipStart=waterStart;overrideUntil=waterOverride;}else if(state=="working"&&active.Loop){clipStart-=personality.NextDouble()*active.Duration/1000.0;}
  }
  public bool Trigger(string id){return TriggerAt(id,time.Elapsed.TotalSeconds);}
  bool TriggerAt(string id,double now){
@@ -143,7 +147,7 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
    if(!Catalog.ById.ContainsKey(next))next="idle_neutral";active=Catalog.ById[next];clipStart=t;overrideUntil=0;elapsed=0;duration=Math.Max(0.001,active.Duration/1000.0);
   }
   double p=active.Loop?(elapsed%duration)/duration:Math.Min(1,elapsed/duration);
-  pose.Reset();pose.Apply(active,p);
+  pose.Reset();pose.Apply(active,p);if(state=="sleep"){pose.EyeHeight=0.10;pose.EyeWidth=1.45;pose.EyeX=pose.EyeY=0;}
   if(state!="preview" && baseId=="idle_neutral" && active.Id=="idle_neutral"){pose.EyeX=CursorX*0.4;pose.EyeY=CursorY*0.3;}
 
   double cursorX=CursorX,cursorY=CursorY,audio=AudioEnvelope;
@@ -158,7 +162,10 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
   if(active.Id=="music_mode" && !double.IsNaN(audio)){pose.ScaleY=0.99+0.03*Math.Max(0,Math.Min(1,audio));pose.EyeY=-0.15+0.3*audio;}
   if(active.Id=="rare_eye_roll"){pose.EyeX=Math.Cos(p*Math.PI*2)*0.6;pose.EyeY=Math.Sin(p*Math.PI*2)*0.4;}
   if(active.Id=="rare_dizzy"){pose.EyeX=Math.Cos(elapsed*Math.PI*5)*0.7;pose.LeftY=Math.Sin(elapsed*Math.PI*5)*0.4;pose.RightY=-pose.LeftY;}
-  if(t>=nextBlink && active.Id!="rare_stare" && active.Id!="sleep_afk"){blinkStart=t;nextBlink=t+3.0+0.8*((Frames/17)%5);}
+  NeighborEyeOffset=0;
+  double neighborElapsed=t-neighborStart;
+  if(!ReducedMotion&&!WaterPriority&&!sleeping&&(state=="idle"||state=="open")&&active.Id=="idle_neutral"&&neighborElapsed>=0&&neighborElapsed<2.4){NeighborEyeOffset=neighborDirection*0.85*Math.Sin(Math.PI*neighborElapsed/2.4);pose.EyeX=pose.EyeX*(1-Math.Abs(NeighborEyeOffset))+NeighborEyeOffset;}
+  if(t>=nextBlink && active.Id!="rare_stare" && active.Id!="sleep_afk"){blinkStart=t;nextBlink=t+2.8+personality.NextDouble()*3.8;}
   bool waterHappy=active.Id=="water_sip"||active.Id=="water_progress";
   double blink=1;if(!waterHappy&&t-blinkStart<0.18)blink=Catalog.ById["blink_natural"].Channels[0].Value((t-blinkStart)/0.18);
   bool coloredEyes=EyeEffects && (active.Id=="star_eyes"||active.Id.StartsWith("eyes_"));
@@ -190,7 +197,7 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
   headphoneMove.X=ReducedMotion?0:pose.X;headphoneMove.Y=ReducedMotion?0:pose.Y;
   check.Opacity=state=="success"?1:0;ask.Opacity=state=="attention"?1:0;
   bool indicator=active.Indicator.Length>0 && active.Indicator!="optionalArms" && active.Indicator!="prop";
-  Color target=state=="working"?Colors.DodgerBlue:state=="attention"?Colors.Goldenrod:state=="error"?Colors.Coral:state=="success"?Colors.MediumSeaGreen:StatusConnected?Color.FromRgb(53,215,150):Colors.SlateGray;
+  Color target=state=="sleep"?Colors.SlateGray:state=="working"?Colors.DodgerBlue:state=="attention"?Colors.Goldenrod:state=="error"?Colors.Coral:state=="success"?Colors.MediumSeaGreen:StatusConnected?Color.FromRgb(53,215,150):Colors.SlateGray;
   double dt=statusFrame<0?1:Math.Max(0,Math.Min(.1,t-statusFrame));statusFrame=t;double blend=1-Math.Exp(-dt/0.12);
   Color old=statusBrush.Color;statusBrush.Color=Color.FromRgb((byte)(old.R+(target.R-old.R)*blend),(byte)(old.G+(target.G-old.G)*blend),(byte)(old.B+(target.B-old.B)*blend));
   double sx=0,sy=-5;
@@ -234,6 +241,7 @@ public sealed partial class OrbyAvatarRenderer : IDisposable {
  }
  // One brief gesture followed by a randomized rest. Never impersonates a task state.
  public void AdvanceIdle(double now,bool afk){
+  if(WaterPriority)return;
   if((state!="idle" && state!="open") || baseId!="idle_neutral")return;
   if(afk && !sleeping){sleeping=true;active=Catalog.ById["sleep_afk"];clipStart=now;overrideUntil=0;ClearParticles();return;}
   if(!afk && sleeping){sleeping=false;active=Catalog.ById["wake_up"];clipStart=now;overrideUntil=0;nextIdleAt=now+18+personality.NextDouble()*20;return;}

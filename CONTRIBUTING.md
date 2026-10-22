@@ -1,5 +1,5 @@
 # Contributing
 
-Keep changes compatible with Windows PowerShell 5.1 and keep shipped source ASCII-safe. Do not add API keys, personal ChatGPT logs, private screenshots, or local settings files.
+Keep changes compatible with Windows PowerShell 5.1. Save non-ASCII PowerShell and XAML files with a UTF-8 BOM. Do not add API keys, personal chat logs, private screenshots, local settings, personal modules or water-tracking assets.
 
-Before opening a pull request, run the focused checks that cover the area you changed. For animation changes, run `Test-Animation-Pack.ps1` and `Test-Idle-Pet.ps1`. For Spotify changes, run `Test-Music-Player.ps1` and `Test-Music-Tab.ps1`. For task companions, run `Test-Mini-Orbys.ps1` and `Test-Task-Pack.ps1`.
+Run focused checks from `src/` for the affected area. `Test-HomeDashboard.ps1` covers public Home and imports the menu suite. `Test-StateMachine.ps1` covers activity transitions. `Test-DropSnapshot.ps1` covers attachment-state interpretation; `Test-DropFlow.ps1` covers composer navigation. Native host checks need a fresh isolated data directory. Do not run tests against another user's real drafts, files or account data. Build release downloads using the root `Build.ps1`; do not package an installed personal app directory.

@@ -1,0 +1,116 @@
+﻿ORBY - INSTALL ONCE, OPEN FROM YOUR DESKTOP
+
+1. Double-click Orby-Setup.exe.
+2. Click Install Orby (or Update Orby).
+3. Click Open Orby. Next time, use the Orby desktop shortcut.
+
+New installs use this permanent folder (existing managed installs are reused):
+%LOCALAPPDATA%\Programs\Orby
+
+Future updates: download the new Orby-Setup.exe and run it. It updates that same
+folder and refreshes the shortcuts. Do not make another version folder.
+Setup never enables startup automatically. You can enable it in Orby settings.
+
+Your preferences and local connection settings stay in %LOCALAPPDATA%\Orby,
+separate from the app files, so updates preserve them.
+
+To share: send this ZIP or Orby-Setup.exe. Your personal account/settings files
+are not included. Each friend installs and connects their own apps.
+
+AI: use Settings > AI connections. Open ChatGPT/Codex and/or Claude and sign in
+in those apps. Both can be paired. Status/usage depends on available local data.
+Music: play music in your player and click the album cover in Orby. Choose Auto
+or your detected player. Controls depend on what the player exposes to Windows.
+Browser media may have limited controls and no per-app volume adjustment.
+
+This is an unsigned Windows x64 build. Leave previously quarantined builds
+blocked. If Windows Security flags this package, leave it blocked too; do not
+restore files, add exclusions, or disable protection.
+
+Home (10.40): a neutral black-and-charcoal overview, matching the other menus.
+The compact AI strip stays above the music card. When idle it shows one Orby;
+when working it shows the active providers and task context. Click a provider
+for its full tasks and usage, or use AI to reveal the three provider choices.
+Music uses the selected Windows player, with its real artwork, timeline and
+playback controls. The arrow opens the full music page. Weather and location
+controls have been removed from Home; it no longer requests forecasts.
+Home keeps the same 596 x 344 size as Settings and scrolls on small displays.
+Files can still be dropped on the notch at any time.
+
+Question cards: when ChatGPT asks for input, Orby shows the available answer
+choices. Select an answer, then click Send answer. For custom replies or a form
+that cannot be read, choose Open ChatGPT. Permission prompts use Allow once /
+Deny separately. Orby never chooses an answer automatically.
+
+Adaptive Mini: Mini size now shows each active AI's avatar and task context.
+It widens for longer text or a second active AI, then shrinks as tasks finish.
+Idle stays blank. Very long text is capped to your screen and remains in hover
+tooltips. Expanded menus keep their normal size.
+
+Roomier Settings: toggle options, AI/music connections, and Save/More settings
+now have separate rows. The full Settings window is resizable, and Save/Close
+stay visible while the options scroll.
+
+Menu motion: hover and resize transitions keep their current position when you
+reverse direction. Menu switches have a short fade, and motion follows the
+current display clock. Reduced motion in Settings turns transitions off.
+
+Claude / Gemini account usage: open the AI chooser and select the provider.
+Its usage bars are in the main card. Click Open usage, sign in on the provider's
+official website, and keep that Usage page selected in a non-minimized browser
+window. Orby reads the visible English five-hour / weekly percentages and reset
+labels through Windows accessibility. You can hover Orby while that page stays
+open behind it. Missing, expired or conflicting readings show Not available.
+This is not a background account API connection, and it does not read passwords,
+cookies or access tokens. Provider layout/language changes can prevent reading.
+
+Double-click the white Orby avatar to open or focus that AI's app (or its website
+if no installed app is found). A small press, wake-up and greeting wave provide
+feedback while the app launches. Working/approval activity has priority, and
+Reduced motion disables the effect. Opening feedback never confirms that an
+app has opened until its normal status connection detects it.
+
+ChatGPT's bars use the connected Codex account allowance. Normal ChatGPT chat
+message limits are separate and are not supplied by this quota feed.
+
+Usage bars fill from zero when the main panel opens or you select an AI. Normal
+status polling does not restart the fill. While open, quota changes transition
+from the displayed level. Missing usage stays explicitly unavailable. Reduced
+motion makes the bars instant.
+
+File drop (10.39): drop up to 20 files, choose ChatGPT, Claude or Gemini,
+then add an optional message and click Send. Files are pasted directly into the
+selected message box; Orby does not open a file chooser. Your message is added
+as soon as the attachments appear, while the provider uploads them. Shortened
+attachment names are recognized without repeated scans of the whole chat.
+The provider's upload speed still depends on its service, file size and network.
+Orby opens the selected installed
+app or official website, starts a new chat, verifies the attachments, and sends
+once. Stay signed in and keep the selected app in front during the handoff.
+Close or Escape returns Home; Back changes the AI before sending. After a
+confirmed send, Orby returns Home automatically. Closing cannot undo a send
+already accepted by an AI. Unknown send outcomes require checking that app;
+Orby does not automatically resend. If the provider's accessibility controls,
+attachment format, language or account permissions are unsupported, Orby stops
+with an explanation rather than claiming the files were sent.
+
+Validation includes local UIA fixtures for all three providers and actual
+clipboard file delivery, shortened Python filenames and message insertion
+before uploads complete. Live verification results are recorded in the local
+validation report.
+Provider updates can change controls; sign-in, supported files and an available
+network connection are still required. The liquid UI picture
+is a proposal only and is not applied to this build.
+Expanded active tasks (10.34): click a working colored Orby behind the main
+Orby to read that task's title and current activity in the card. Click the main
+white Orby to return to its task; double-click still opens the selected AI app.
+Click the active-task count for a scrollable list with every available task's
+full title, current activity and state. Choose any entry to inspect it, including
+tasks beyond the four colored avatars. Selection follows task identity while
+updates arrive. When the selected task finishes, details return to the main task.
+Active background Orbies are larger in the expanded menu and show the same blue
+orbiting working indicator as the main Orby. Waiting-for-input uses amber, and
+Reduced motion keeps indicators still. Closed-notch sizing is unchanged.
+Task information depends on the existing connected activity feeds; no additional
+activity or complete conversation transcript is invented when a feed lacks it.
+Home uses the same panel size as Settings (596 x 344 DIPs).

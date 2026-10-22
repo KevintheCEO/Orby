@@ -1,4 +1,4 @@
-function ConvertTo-OrbyComparablePrompt {
+﻿function ConvertTo-OrbyComparablePrompt {
  param([string]$Text)
  return $Text.Replace("`r`n","`n").Replace("`r","`n").TrimEnd("`n")
 }
@@ -17,7 +17,7 @@ function Wait-OrbyPromptInserted {
  do{
   try{
    $element=Find-ChatComposer $Root
-   $value=$element.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).Current.Value
+   $value='';$vp=$null;if($element.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$vp)){$value=$vp.Current.Value}
    $pattern=$null;$hasText=$element.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern,[ref]$pattern)
    $text='';if($hasText){$text=$pattern.DocumentRange.GetText(-1)}
    $valueLength=$value.Length;$textLength=$text.Length

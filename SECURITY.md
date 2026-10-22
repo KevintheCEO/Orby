@@ -1,18 +1,25 @@
 # Security and privacy
 
-Orby does not contain or request a ChatGPT API key, Spotify API key, Spotify password, cookie, access token, refresh token, or private key. It connects locally to the installed ChatGPT Windows app and the active Windows Spotify media session.
+Orby is a local Windows desktop companion. The public 10.40 package excludes personal modules, water reminders and intake tracking. It does not include user settings, chat logs, connection credentials or private captures. Weather/location polling and the withdrawn desktop phone connector are absent.
 
-Runtime settings, reminders, alerts, and diagnostic captures are stored locally under `%LOCALAPPDATA%\Orby`. They are excluded from the public repository by `.gitignore`. Do not commit files from that folder or paste captures containing private conversation text into issues.
+## Data and permissions
 
-Orby does not send ChatGPT messages or Spotify credentials to a remote Orby server. File handoff stays on the local Windows desktop. The ChatGPT app and Spotify still apply their own account, upload, privacy, and permission rules.
+Orby reads supported local AI activity and accessibility information, media sessions and available account-usage signals. It can open or focus provider applications. With your explicit Send action, it pastes selected files and your message into the chosen AI provider and sends them. That provider handles the upload and applies its own privacy rules. This is not an Orby-hosted file relay.
 
-The included `Orby.exe` is only a local launcher for the included app files. It does not contain credentials or contact a remote service.
+File handoff uses the Windows clipboard and desktop accessibility controls. It depends on the correct foreground window and supported provider controls. Unknown send outcomes are not automatically retried. A failed message send does not prove that attachments were never uploaded. Review the provider before trying again.
 
-## v5.9 security remediation
-The previous unsigned launcher used hidden PowerShell with ExecutionPolicy Bypass and automatically registered a per-user Run startup entry. Defender reported Behavior:Win32/Persistence.A!ml against the previous executable. These behaviors are plausible contributors, not a confirmed root cause from Defender telemetry.
+Supported permission/question prompts still require explicit user choices. Orby does not automatically approve requests. Status and usage support varies by provider; unavailable readings are labelled.
 
-This build removes automatic startup registration, disables its settings control, removes execution-policy overrides and hidden/minimized launch flags, and includes the launcher source. It does not add antivirus exclusions, restore quarantined files, or change Windows policy. The executable remains unsigned; Windows reputation/signing warnings may still occur.
+Preferences, cached activity/usage information, logs and copied file-inbox contents can contain sensitive filenames or task text. They remain under the user's local Orby data directory, normally `%LOCALAPPDATA%\Orby`, and are not encrypted as a whole. Diagnostic captures may include private conversation or window text. Review and redact them before sharing. Git ignore rules are a precaution, not a substitute for reviewing uploads. Local files have no general automatic-retention guarantee.
 
-Verification on 2026-10-06: Microsoft Defender custom scan of the complete replacement folder returned "found no threats" (exit 0). All PowerShell files parsed without errors; the app rendered its Home and compact previews using ordinary Windows PowerShell policy (exit 0). This is a point-in-time scan, not a guarantee of future detection results. Keep the previous detected executable quarantined and replace old published downloads with this build.
+Account integrations may use provider-owned local authorization stores. Orby does not ask you to paste passwords or API keys. No such credentials are distributed with this release. Visible Claude/Gemini usage-page reading does not read browser cookies or passwords. Only use official installed provider clients and trusted executables on PATH.
 
-Console-free update: launcher uses CreateNoWindow for its PowerShell child at the user's request. No execution-policy override or startup registration is added. Full-folder Defender scan found no threats; console-free launch rendered previews successfully on 2026-10-06.
+## Windows behavior
+
+The native launcher hosts installed Windows PowerShell 5.1 with normal policy checks. Setup installs per user, verifies its embedded file manifest, rejects unrelated destinations and downgrades, and stages replacement with rollback. Quit the running app before updating. Startup is opt-in. No antivirus exclusions, policy overrides or automatic firewall changes are applied.
+
+Binaries are unsigned. SHA-256 checksums establish download consistency, not publisher identity or a security certification. The release was scanned with Microsoft Defender at publication time; this does not guarantee all future detections or behavior. Previously quarantined versions should remain blocked. If a new detection appears, leave the file blocked and report its name and hash; do not restore it or disable protection.
+
+## Reporting
+
+For a security concern, use GitHub private vulnerability reporting if enabled; otherwise contact the repository maintainer without posting private files or credentials publicly. Regular compatibility problems can be reported in Issues with redacted reproduction steps.

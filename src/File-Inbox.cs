@@ -1,4 +1,4 @@
-// Adapted from Louis-CFM/coucou windows/src-tauri/src/files.rs (MIT).
+﻿// Adapted from Louis-CFM/coucou windows/src-tauri/src/files.rs (MIT).
 // Copyright (c) 2026 Louis Raille. See third-party/Coucou-LICENSE.txt.
 using System;
 using System.IO;

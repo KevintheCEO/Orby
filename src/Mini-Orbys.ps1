@@ -1,4 +1,4 @@
-function Initialize-OrbyMinis {
+﻿function Initialize-OrbyMinis {
  $script:miniOrbys=@()
  $hostCanvas=$window.FindName('MiniOrbyHost')
  $colors=@('#E74766','#A765ED','#45BCB8','#EDAE46')

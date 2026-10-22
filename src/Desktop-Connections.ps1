@@ -1,4 +1,6 @@
-﻿Add-Type -Path (Join-Path $PSScriptRoot 'File-Inventory.cs')
+﻿. (Join-Path $PSScriptRoot 'Music-Source-UI.ps1')
+. (Join-Path $PSScriptRoot 'Media-Sources.ps1')
+Add-Type -Path (Join-Path $PSScriptRoot 'File-Inventory.cs')
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing,System.Net.Http
 Add-Type -TypeDefinition @'
 using System;
@@ -13,9 +15,11 @@ $script:orbySettingsPath=Join-Path $logDir 'settings.json'
 $script:orbyReminderPath=Join-Path $logDir 'reminders.json'
 $script:orbyAlertPath=Join-Path $logDir 'alerts.json'
 $script:orbySettings=[ordered]@{HideFullscreen=$true;EyeEffects=$true;ReducedMotion=$false;Music=$true;Health=$true;Notifications=$true;Downloads=$true;Tasks=$true;Watchlist=$true;AllowPublicNews=$false;NotificationApps='';MediaApp='';WatchTopics='';DownloadFolder='';Quiet=$false;Preview=$true;StartWithWindows=$false;FocusMinutes=25;BreakMinutes=0;Favorites=@()}
+$script:orbySettings['NotchSize']='default'
 $script:orbySettings['Sounds']=$true
 $script:orbySettings.PrimaryProvider='chatgpt';$script:orbySettings.ProviderEnabled='chatgpt'
 try{if(Test-Path -LiteralPath $script:orbySettingsPath){$saved=Get-Content $script:orbySettingsPath -Raw | ConvertFrom-Json;foreach($key in @($script:orbySettings.Keys)){if($saved.PSObject.Properties[$key]){$script:orbySettings[$key]=$saved.$key}}}}catch{Write-OrbitLog 'Settings could not be read; using defaults'}
+if($script:orbySettings.NotchSize -notin @('default','mini')){$script:orbySettings.NotchSize='default'}
 $script:orbySettings.PrimaryProvider=([string]$script:orbySettings.PrimaryProvider).ToLowerInvariant()
 if($script:orbySettings.PrimaryProvider -notin @('chatgpt','claude','gemini')){$script:orbySettings.PrimaryProvider='chatgpt'}
 $script:orbySettings.ProviderEnabled=(@((([string]$script:orbySettings.ProviderEnabled).ToLowerInvariant() -split ',')+$script:orbySettings.PrimaryProvider) | Where-Object {$_ -in @('chatgpt','claude','gemini')} | Select-Object -Unique) -join ','
@@ -24,8 +28,9 @@ if(-not $script:orbySettings.DownloadFolder){
     
 if(-not $script:orbySettings.DownloadFolder){$script:orbySettings.DownloadFolder=Join-Path $env:USERPROFILE 'Downloads'}
 }
-$script:orbySettings.StartWithWindows=$false
-$script:orbyStartupStatus='Manual start (security build)'
+. (Join-Path $PSScriptRoot 'Startup.ps1')
+$script:orbySettings.StartWithWindows=Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Startup')) 'Orby.lnk')
+$script:orbyStartupStatus='Windows Startup shortcut (opt-in)'
 $script:orbyReminders=New-Object System.Collections.Generic.List[object]
 try{if(Test-Path -LiteralPath $script:orbyReminderPath){foreach($r in @(Get-Content $script:orbyReminderPath -Raw | ConvertFrom-Json)){if($r -and -not $r.Done){$script:orbyReminders.Add($r)}}}}catch{}
 $script:orbyAlerts=New-Object System.Collections.Generic.List[object]
@@ -36,7 +41,7 @@ $script:orbyBannerUntil=[datetime]::MinValue;$script:orbyBanner=$null;$script:or
 $script:orbyNextBreak=[datetime]::UtcNow
 $script:orbyShared=[hashtable]::Synchronized(@{Stop=$false;Started=[datetime]::UtcNow;Settings=[pscustomobject]$script:orbySettings;Events=(New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]');Commands=(New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]');Media=$null;Health=$null;News=@();MediaApps=@();NotificationMode='Connecting';MediaError='Connecting';WatchError='';NotificationError='';WatchAt=$null})
 
-$script:orbyShared.SpotifyCommands=New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
+$script:orbyShared.MusicCommands=New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
 function Save-OrbyJson {param($Value,[string]$Path) $json=ConvertTo-Json -InputObject $Value -Depth 7;[IO.File]::WriteAllText($Path+'.tmp',$json,(New-Object Text.UTF8Encoding $false));Move-Item -LiteralPath ($Path+'.tmp') -Destination $Path -Force}
 function Save-OrbySettings {Save-OrbyJson ([pscustomobject]$script:orbySettings) $script:orbySettingsPath;$script:orbyShared.Settings=[pscustomobject]$script:orbySettings}
 function Save-OrbyReminders {Save-OrbyJson @($script:orbyReminders.ToArray()) $script:orbyReminderPath}
@@ -80,7 +85,7 @@ function Update-OrbyLocal {
         }
     }
     if($script:downloadInventoryTask -and $script:downloadInventoryTask.IsCompleted){
-        if(-not $script:downloadInventoryTask.IsFaulted){
+        if(-not $script:downloadInventoryTask.IsFaulted -and -not $script:downloadInventoryTask.IsCanceled){
             $inventory=$script:downloadInventoryTask.Result
             if($inventory.Valid){foreach($file in $inventory.Files){
                 $key=$file.FullName;$old=$script:orbyDownloads[$key]

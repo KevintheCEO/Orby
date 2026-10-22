@@ -1,15 +1,16 @@
-function Test-OrbyNewChatLabel {
- param([string]$Name,[string]$Help,[string]$Id)
+﻿function Test-OrbyNewChatLabel {
+ param([string]$Name,[string]$Help,[string]$Id,[string]$Provider='')
  $label=($Name+' '+$Help).Trim()
- return ($label -match '(?i)^new chat(?:\s|$)' -or $Id -match '(?i)^(new[-_]?chat|new[-_]?chat[-_]?button)$')
+ if($Provider -eq 'claude' -and $Name.Trim() -eq 'New'){return $true}
+ return ($label -match '(?i)^(?:start (?:a )?)?new chat(?:\s|$)' -or $Id -match '(?i)^(new[-_]?chat|new[-_]?chat[-_]?button)$')
 }
 function Find-OrbyNewChat {
- param($Root)
+ param($Root,[string]$Provider='')
  foreach($tree in (Get-OrbyChatRoots $Root)){
   foreach($el in $tree.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)){
    try{
     $c=$el.Current
-    if($c.IsOffscreen -or -not $c.IsEnabled -or -not (Test-OrbyNewChatLabel $c.Name $c.HelpText $c.AutomationId)){continue}
+    if($c.IsOffscreen -or -not $c.IsEnabled -or -not (Test-OrbyNewChatLabel $c.Name $c.HelpText $c.AutomationId $Provider)){continue}
     $candidate=$el
     for($i=0;$i -lt 3 -and $candidate;$i++){
      $invoke=$null
@@ -56,22 +57,26 @@ function Get-OrbyComposerRank {
  param([string]$Name,[string]$Id,[string]$Class)
  if($Id -eq 'prompt-textarea'){return 100}
  if($Name -match '(?i)search|address|url|filter|rename|title'){return 0}
- if($Name -match '(?i)^(message chatgpt|ask chatgpt|message|ask anything|send a message|prompt|work with chatgpt)(\s|$)'){return 80}
- if($Class -match '(?i)ProseMirror|prompt-textarea'){return 70}
+ if($Name -match '(?i)^(message chatgpt|ask chatgpt|message claude|reply to claude|how can claude help|write your prompt to claude|ask gemini|enter a prompt|type a message|message|ask anything|send a message|prompt|work with chatgpt)(\s|$)'){return 80}
+ if($Class -match '(?i)ProseMirror|prompt-textarea|ql-editor|rich-textarea'){return 70}
  return 0
 }
 
 function Resolve-OrbyComposerText {
  param([string]$Name,[string]$Value,[string]$Text,[bool]$HasText,[bool]$AllowPlaceholder=$true)
- $placeholder=$Name -match '(?i)^(Ask ChatGPT|Ask anything|Message ChatGPT|Send a message)$'
+ # Gemini's accessible editor name and empty-editor hint intentionally differ.
+ if($AllowPlaceholder -and $Name -match '(?i)^Enter a prompt for Gemini$' -and $Value.Trim() -eq 'Ask Gemini' -and (-not $HasText -or $Text.Trim() -eq 'Ask Gemini' -or -not $Text.Trim().Length)){return ''}
+ $placeholder=$Name -match '(?i)^(Ask ChatGPT|Ask anything|Message ChatGPT|Message Claude|Reply to Claude|How can Claude help you today\?|Ask Gemini|Enter a prompt here|Send a message)$'
  if($HasText -and $Text.Trim().Length -gt 0 -and -not ($placeholder -and $Text.Trim() -eq $Name.Trim())){return $Text.TrimEnd("`r","`n")}
  if($AllowPlaceholder -and $placeholder -and $Value.Trim() -eq $Name.Trim()){return ''}
  return $Value
 }
 function Get-OrbyComposerText {
  param($Element,[bool]$AllowPlaceholder=$true)
- $valuePattern=$Element.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)
+ $valuePattern=$null;$hasValue=$Element.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$valuePattern)
  $textPattern=$null;$hasText=$Element.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern,[ref]$textPattern)
  $text='';if($hasText){$text=$textPattern.DocumentRange.GetText(-1)}
- return Resolve-OrbyComposerText $Element.Current.Name $valuePattern.Current.Value $text $hasText $AllowPlaceholder
+ if(-not $hasValue -and -not $hasText){throw 'Composer text cannot be verified'}
+ $value='';if($hasValue){$value=$valuePattern.Current.Value}
+ return Resolve-OrbyComposerText $Element.Current.Name $value $text $hasText $AllowPlaceholder
 }

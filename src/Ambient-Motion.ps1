@@ -1,4 +1,4 @@
-function Initialize-OrbyAmbientMotion {
+﻿function Initialize-OrbyAmbientMotion {
  $script:ambientPools=@();$index=0
  foreach($pair in @(@('HomeAmbientBrush','RefHomePage'),@('OrbAmbientBrush','RefHomePage'),@('MusicAmbientBrush','RefMusicPage'),@('PillAmbientBrush0','RefHomePage'),@('PillAmbientBrush1','RefHomePage'),@('PillAmbientBrush2','RefHomePage'),@('PillAmbientBrush3','RefHomePage'))){
   $brush=$script:referenceHome.FindName($pair[0]);$owner=$script:referenceHome.FindName($pair[1])

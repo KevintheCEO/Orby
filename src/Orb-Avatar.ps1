@@ -1,4 +1,4 @@
-function New-OrbitAvatar {
+﻿function New-OrbitAvatar {
     Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase
     [xml]$xml=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Avatar.xaml') -Raw
     $root=[Windows.Markup.XamlReader]::Load((New-Object Xml.XmlNodeReader $xml))
