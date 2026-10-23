@@ -93,5 +93,5 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrig
   const decisions=store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId&&r.status==='decided').map(r=>({id:r.id,nativeId:r.nativeId,revision:r.revision,...r.signed}));
   const state=await publish(s.id);res.json({connected:true,requests:store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId).map(r=>({id:r.id,expiresAt:Math.floor(r.expires/1000),status:r.status})),decisions,phoneCount:store.all('d-phone').filter(p=>p.sourceId===s.id&&p.active).length,state});
  }));
- return {snapshot,prune,mobile,online,publish};
+ return {snapshot,prune,mobile,source,online,publish};
 }

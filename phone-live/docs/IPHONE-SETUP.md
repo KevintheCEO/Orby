@@ -15,6 +15,12 @@ This is the foreground Safari / Home Screen version you chose. No Apple membersh
 
 For an app-style window, use Safari's **Share → Add to Home Screen before pairing**, open that icon, then paste a fresh invitation from Windows. Safari and the Home Screen window can use separate storage, so pairing in one does not guarantee the other is connected. Scan-to-Safari is the simplest first test.
 
+## Optional harmless connection test
+
+After pairing, run `scripts/Run-PhoneConnectionCheck.ps1` on Windows. Refresh Safari, find **Connection test — no action will run**, then tap **Deny test** and confirm your iPhone passkey. Windows verifies the returned signature against its locally pinned phone key and acknowledges the test. The test lasts two minutes. Its records are separate from real permission requests: it cannot execute a command, grant access or reach the native approval worker. It works with real permission answering still off.
+
+This checks the physical phone signature and PC acknowledgement, not a real desktop permission click. A successful result is saved to `outputs/iPhone-connection-check.json` on this workspace PC.
+
 ## Test a supported approval
 
 Task viewing works with permission answering off. To test answering, first enable **Let trusted phones answer supported requests** in Windows Phone access and **Save connection**.

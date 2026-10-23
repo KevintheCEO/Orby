@@ -5,6 +5,7 @@ import {convertCOSEtoPKCS} from '@simplewebauthn/server/helpers';
 import {fileURLToPath} from 'node:url';
 import {digest,token,fail} from './security.mjs';
 import {fingerprint,decisionText} from './desktop.mjs';
+import {mountConnectionChecks} from './connection-check.mjs';
 
 export function mountPhoneWeb(app,{store,desktop,origin,clock=Date.now}){
  if(!origin)return;
@@ -13,6 +14,7 @@ export function mountPhoneWeb(app,{store,desktop,origin,clock=Date.now}){
  const wrap=fn=>(req,res,next)=>Promise.resolve().then(()=>{if(req.method==='GET'){fail(req.headers.origin===origin||req.headers['sec-fetch-site']==='same-origin',403,'Open the phone app on its own address');}else fail(req.headers.origin===origin,403,'Unexpected phone origin');return fn(req,res);}).catch(next);
  const phone=req=>{const p=desktop.mobile(req);fail(p.mode==='web',403,'Use the native phone client for this device');return p;};
  const topLevel=response=>{try{const raw=Buffer.from(response.response.clientDataJSON,'base64url');fail(raw.length<=4096,403,'Passkey client data is too large');const c=JSON.parse(raw.toString('utf8'));fail(c&&typeof c==='object'&&(c.crossOrigin===undefined||c.crossOrigin===false),403,'Open Orby directly in Safari');}catch{fail(false,403,'Invalid passkey client context');}};
+ const connectionChecks=mountConnectionChecks(app,{store,desktop,origin,clock,wrap,phone,topLevel});
  const asset=fileURLToPath(new URL('../web/',import.meta.url));
  app.get(['/iphone','/iphone/'],(_req,res)=>res.redirect(302,'/iphone/home.html'));
  app.use('/iphone',(req,res,next)=>{res.set({'Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Permissions-Policy':'publickey-credentials-create=(self), publickey-credentials-get=(self)'});next();});
@@ -35,7 +37,7 @@ export function mountPhoneWeb(app,{store,desktop,origin,clock=Date.now}){
   const secret=token(),p={id:randomUUID(),sourceId:registration.sourceId,name:registration.name,mode:'web',publicKey:raw.toString('base64'),hash:digest(secret),created:clock(),active:false,credential:{id:credential.id,publicKey:Buffer.from(credential.publicKey).toString('base64'),counter:credential.counter,transports:credential.transports||[]}};
   store.remove('d-web-reg',b.id);store.remove('d-invite',registration.inviteHash);store.put('d-phone',p.id,p);res.status(201).json({token:secret,deviceId:p.id,fingerprint:fingerprint(p.publicKey)});
  }));
- app.get('/web/state',wrap((req,res)=>{const p=desktop.mobile(req,false);fail(p.mode==='web',403,'Wrong phone client');const identity={fingerprint:fingerprint(p.publicKey)};res.json(p.active?{...desktop.snapshot(p.sourceId),...identity,active:true}:{...identity,connected:false,active:false,tasks:[],requests:[],message:'Confirm the matching fingerprint in Orby on your PC'});}));
+ app.get('/web/state',wrap((req,res)=>{const p=desktop.mobile(req,false);fail(p.mode==='web',403,'Wrong phone client');const identity={fingerprint:fingerprint(p.publicKey)};res.json(p.active?{...desktop.snapshot(p.sourceId),...identity,connectionChecks:connectionChecks(p.sourceId),active:true}:{...identity,connected:false,active:false,tasks:[],requests:[],message:'Confirm the matching fingerprint in Orby on your PC'});}));
  app.get('/web/request/:id',wrap((req,res)=>{const p=phone(req),state=desktop.snapshot(p.sourceId),r=store.get('d-request',req.params.id);fail(r&&r.sourceId===p.sourceId,404,'Request not found');res.json({id:r.id,reviewText:r.reviewText,revision:r.revision,provider:r.provider,status:state.connected?r.status:'offline',expiresAt:Math.floor(r.expires/1000),credentialId:p.credential.id});}));
  app.post('/web/request/:id/decision',wrap(async(req,res)=>{
   const p=phone(req),b=z.object({revision:z.string().regex(/^[a-f0-9]{64}$/),decision:z.enum(['allow','deny']),nonce:z.string().uuid(),expiresAt:z.number().int(),response:z.unknown()}).strict().parse(req.body);
