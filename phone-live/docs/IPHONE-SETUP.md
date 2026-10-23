@@ -17,7 +17,7 @@ For an app-style window, use Safari's **Share → Add to Home Screen before pair
 
 ## Optional harmless connection test
 
-After pairing, run `scripts/Run-PhoneConnectionCheck.ps1` on Windows. Refresh Safari, find **Connection test — no action will run**, then tap **Deny test** and confirm your iPhone passkey. Windows verifies the returned signature against its locally pinned phone key and acknowledges the test. The test lasts two minutes. Its records are separate from real permission requests: it cannot execute a command, grant access or reach the native approval worker. It works with real permission answering still off.
+After pairing, run `scripts/Run-PhoneConnectionCheck.ps1` on Windows. Refresh Safari, find **Connection test — no action will run**, then tap **Deny test** and confirm your iPhone passkey. Windows verifies the returned signature against its locally pinned phone key and acknowledges the test. The harmless diagnostic lasts ten minutes. Real permission requests still expire after two minutes. Its records are separate from real permission requests: it cannot execute a command, grant access or reach the native approval worker. It works with real permission answering still off.
 
 This checks the physical phone signature and PC acknowledgement, not a real desktop permission click. A successful result is saved to `outputs/iPhone-connection-check.json` on this workspace PC.
 
@@ -41,6 +41,6 @@ To stop sharing, disable **Enable phone access** and save, revoke the phone in W
 
 ## What has actually been tested
 
-Local tests exercise registration, exact origin, passkey user verification, signature binding, pending-phone isolation, all three task providers, expired/stale requests, revocation and PC acknowledgement. An isolated Chrome browser with a virtual platform authenticator completed the real browser registration/review/sign/ack flow. This is **not proof of physical iPhone Safari or Face ID behavior**; that is the next user-device test.
+Local tests exercise registration, exact origin, passkey user verification, signature binding, pending-phone isolation, all three task providers, expired/stale requests, revocation and PC acknowledgement. An isolated Chrome browser with a virtual platform authenticator completed the real browser registration/review/sign/ack flow. A physical iPhone Safari test subsequently passed: the user confirmed the task feed over mobile data, and a passkey-signed no-action denial was independently verified on Windows against the pinned phone key and acknowledged. This does not test a real native permission click, background Live Activity or APNs delivery.
 
 The separate native iPhone app and Live Activity extension compiled successfully for both simulator and unsigned device in [the Mac build check](https://github.com/kevinenas/Orby/actions/runs/39993496758). No signed IPA, phone installation or APNs delivery was produced. Native background Live Activities remain deferred under your free-version choice.

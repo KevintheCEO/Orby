@@ -15,7 +15,7 @@ export function mountConnectionChecks(app,{store,desktop,origin,clock,wrap,phone
   fail(store.all('d-phone').some(p=>p.sourceId===s.id&&p.active&&p.mode==='web'),409,'Confirm a browser phone first');prune();
   for(const c of store.all('d-check').filter(c=>c.sourceId===s.id))store.remove('d-check',c.id);
   const reviewText='Orby connection test only.\n\nDeny this test to check the phone passkey and Windows signature verification. No command will run. No app, internet, file or computer access will be granted or changed.';
-  const c={id:randomUUID(),sourceId:s.id,instance:l.instance,reviewText,revision:digest(reviewText),status:'pending',expires:clock()+120000};store.put('d-check',c.id,c);res.status(201).json({id:c.id,expiresAt:Math.floor(c.expires/1000)});
+  const c={id:randomUUID(),sourceId:s.id,instance:l.instance,reviewText,revision:digest(reviewText),status:'pending',expires:clock()+600000};store.put('d-check',c.id,c);res.status(201).json({id:c.id,expiresAt:Math.floor(c.expires/1000)});
  }));
  app.get('/desktop/connection-check/:id',pcWrap((req,res)=>{const s=desktop.source(req),c=current(req.params.id,s.id);res.json({id:c.id,revision:c.revision,status:c.status,signed:c.signed||null});}));
  app.post('/desktop/connection-check/:id/ack',pcWrap((req,res)=>{const s=desktop.source(req),c=current(req.params.id,s.id),b=z.object({result:z.enum(['verified','failed'])}).strict().parse(req.body);fail(c.status==='decided'&&c.signed,409,'No signed test is waiting');store.put('d-check',c.id,{...c,status:b.result,signed:undefined});res.json({recorded:true});}));

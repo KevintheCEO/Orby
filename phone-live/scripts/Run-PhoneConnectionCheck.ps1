@@ -14,7 +14,7 @@ try{
  Write-Output 'Ready: refresh Safari on your paired iPhone, choose Deny test, and confirm the passkey prompt. No real action can run from this test.'
  $expected=[OrbyPhoneClient]::Hash("Orby connection test only.`n`nDeny this test to check the phone passkey and Windows signature verification. No command will run. No app, internet, file or computer access will be granted or changed.")
  $watch=[Diagnostics.Stopwatch]::StartNew();$finished=$false
- while($watch.Elapsed.TotalSeconds -lt 115){
+ while($watch.Elapsed.TotalSeconds -lt 595){
   Start-Sleep -Seconds 1;$reply=Request 'GET' ('/desktop/connection-check/'+$check.id) $null
   if($reply.status -ne 'decided'){continue}
   $d=$reply.signed;$key=$config.Trusted.PSObject.Properties[[string]$d.deviceId].Value
