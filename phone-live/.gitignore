@@ -1,0 +1,16 @@
+node_modules/
+.data/
+.env
+*.p8
+*.p12
+*.mobileprovision
+*.xcuserstate
+DerivedData/
+artifacts/
+generated/
+android/build/
+android/.data/
+.desktop-data/
+*.jks
+*.keystore
+*.pfx
