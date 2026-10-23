@@ -22,28 +22,55 @@ function Get-OrbyPhoneTaskSnapshot {
   $result+=@{id=([string]$task.Id).Substring(0,[math]::Min(240,([string]$task.Id).Length));provider=$status.Name;state=$(if($task.State -in @('working','attention','idle','error')){$task.State}else{'idle'});title=$title.Substring(0,[math]::Min(240,$title.Length));detail=$detail.Substring(0,[math]::Min(600,$detail.Length))}
  }};return $result
 }
+function Get-OrbyPhoneReviewText($q){
+ $text='ChatGPT'+"`n"+$q.Title+"`n`n"+$q.Detail
+ if($q.Kind -eq 'question'){$i=0;foreach($choice in $q.Choices){$text+="`n"+$i+': '+$choice;$i++};$text+="`nCustom response: "+[bool]$q.CanReply};return $text
+}
+function Test-OrbyPhoneHandoff {
+ $q=$script:approvalRequest
+ return [bool]($script:phoneConfig.Enabled -and $script:phoneConfig.Approvals -and $script:phoneConfig.Trusted.Count -gt 0 -and $script:phoneReadyCount -gt 0 -and $script:phoneConnectedAt -and ([datetime]::UtcNow-$script:phoneConnectedAt).TotalSeconds -lt 15 -and $q -and $q.Available -and $q.CanAnswer -and $script:approvalAnswered -ne $q.Id -and $script:approvalFirstSeen -and ([datetime]::UtcNow-$script:approvalFirstSeen).TotalSeconds -ge 300)
+}
+function Get-OrbyPhoneActiveTaskToken {
+ $tasks=@($script:orbyActiveTasks | Where-Object {$_.State -eq 'working' -and $_.Turn -and (-not $_.Provider -or $_.Provider -eq 'chatgpt')})
+ if($tasks.Count -ne 1){return ''};return [OrbyPhoneClient]::Hash(([string]$tasks[0].Id)+'|'+([string]$tasks[0].Turn)+'|'+([string]$tasks[0].Started))
+}
+function Get-OrbyPhoneStopRequest {
+ $token=Get-OrbyPhoneActiveTaskToken;if(-not $token){$script:phoneStopRequest=$null;return $null}
+ $task=@($script:orbyActiveTasks|Where-Object {$_.State -eq 'working' -and $_.Turn -and (-not $_.Provider -or $_.Provider -eq 'chatgpt')})[0]
+ if($script:phoneStopPoll -and $script:phoneStopPoll.IsCompleted){if(-not $script:phoneStopPoll.IsFaulted -and $script:phoneStopPollToken -ceq $token){$q=$script:phoneStopPoll.Result;if($q.Available){$q|Add-Member NoteProperty NativeStopId $q.Id -Force;$q|Add-Member NoteProperty TaskToken $token -Force;$q.Id=[OrbyPhoneClient]::Hash($q.Id+'|'+$token)};$script:phoneStopRequest=$q;$script:phoneStopAt=[datetime]::UtcNow};$script:phoneStopPoll=$null}
+ if(-not $script:phoneStopPoll){$script:phoneStopPollToken=$token;$script:phoneStopPoll=[OrbyApprovalWorker]::PollStop([string]$task.Title)}
+ if($script:phoneStopRequest -and $script:phoneStopRequest.Available -and $script:phoneStopRequest.TaskToken -ceq $token -and ([datetime]::UtcNow-$script:phoneStopAt).TotalSeconds -lt 5){return $script:phoneStopRequest};return $null
+}
 function Get-OrbyPhoneRequest {
  if($script:phoneSubmission){return $script:phoneSubmission.Request}
- $q=$script:approvalRequest;$eligible=$script:phoneConfig.Approvals -and $q -and $q.Available -and $q.CanAnswer -and $q.Kind -eq 'permission' -and $script:approvalRequestAt -and ([datetime]::UtcNow-$script:approvalRequestAt).TotalSeconds -lt 5
+ $q=$script:approvalRequest;$stop=$false
+ if(( -not $q -or -not $q.Available) -and $script:phoneConfig.Approvals){$q=Get-OrbyPhoneStopRequest;$stop=$true}
+ $observedAt=if($stop){$script:phoneStopAt}else{$script:approvalRequestAt}
+ $eligible=($stop -or (Test-OrbyPhoneHandoff)) -and $q -and $q.Kind -in @('permission','question','stop') -and $observedAt -and ([datetime]::UtcNow-$observedAt).TotalSeconds -lt 5
  if(-not $eligible){$script:phoneLocalRequest=$null;return $null}
  if($script:phoneConsumed.ContainsKey([string]$q.Id)){return $null}
- $review='ChatGPT'+"`n"+$q.Title+"`n`n"+$q.Detail
+ $review=Get-OrbyPhoneReviewText $q
  if($review.Length -gt 8000 -or $review -match '(?i)BEGIN .*PRIVATE KEY|sk-[A-Za-z0-9_-]{20,}|Bearer\s+\S+'){$script:phoneLocalRequest=$null;return $null}
  $revision=[OrbyPhoneClient]::Hash($review)
- if(-not $script:phoneLocalRequest -or $script:phoneLocalRequest.nativeId -cne $q.Id -or $script:phoneLocalRequest.revision -cne $revision){$script:phoneLocalRequest=@{id=[guid]::NewGuid().ToString();nativeId=[string]$q.Id;provider='ChatGPT';reviewText=$review;revision=$revision};$script:phoneRequestStarted=[datetime]::UtcNow}
- if(([datetime]::UtcNow-$script:phoneRequestStarted).TotalSeconds -ge 120){return $null};return $script:phoneLocalRequest
+ if(-not $script:phoneLocalRequest -or $script:phoneLocalRequest.nativeId -cne $q.Id -or $script:phoneLocalRequest.revision -cne $revision -or ([datetime]::UtcNow-$script:phoneRequestStarted).TotalSeconds -ge 120){$script:phoneLocalRequest=@{id=[guid]::NewGuid().ToString();nativeId=[string]$q.Id;provider='ChatGPT';kind=[string]$q.Kind;choices=@($q.Choices);canReply=[bool]$q.CanReply;handoff=(-not $stop);reviewText=$review;revision=$revision};$script:phoneRequestStarted=[datetime]::UtcNow}
+ return $script:phoneLocalRequest
 }
 function Invoke-OrbyPhoneDecision($d){
- $r=$script:phoneLocalRequest;$q=$script:approvalRequest
- if(-not $script:phoneConfig.Enabled -or -not $script:phoneConfig.Approvals -or $script:approvalReplyTask -or -not $r -or -not $q -or -not $q.Available -or $q.Kind -ne 'permission' -or $q.Id -cne $r.nativeId -or $d.id -cne $r.id -or $d.nativeId -cne $r.nativeId -or $d.revision -cne $r.revision -or $script:phoneConsumed.ContainsKey($r.nativeId)){return}
+ $r=$script:phoneLocalRequest;$q=if($r.kind -eq 'stop'){$script:phoneStopRequest}else{$script:approvalRequest};$observedAt=if($r.kind -eq 'stop'){$script:phoneStopAt}else{$script:approvalRequestAt}
+ if(-not $script:phoneConfig.Enabled -or -not $script:phoneConfig.Approvals -or $script:approvalReplyTask -or -not $r -or -not $q -or -not $q.Available -or $q.Kind -notin @('permission','question','stop') -or $q.Id -cne $r.nativeId -or $d.id -cne $r.id -or $d.nativeId -cne $r.nativeId -or $d.revision -cne $r.revision -or $script:phoneConsumed.ContainsKey($r.nativeId)){return}
  $now=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds();$key=$script:phoneConfig.Trusted[[string]$d.deviceId]
- $currentReview='ChatGPT'+"`n"+$q.Title+"`n`n"+$q.Detail
- if(-not $q.CanAnswer -or [OrbyPhoneClient]::Hash($currentReview) -cne $r.revision -or -not $key -or [long]$d.expiresAt -le $now -or [long]$d.expiresAt -gt ([DateTimeOffset]$script:phoneRequestStarted).ToUnixTimeSeconds()+135 -or ([datetime]::UtcNow-$script:phoneRequestStarted).TotalSeconds -ge 120 -or ([datetime]::UtcNow-$script:approvalRequestAt).TotalSeconds -ge 5){return}
+ $currentReview=Get-OrbyPhoneReviewText $q
+ if(-not $q.CanAnswer -or [OrbyPhoneClient]::Hash($currentReview) -cne $r.revision -or -not $key -or [long]$d.expiresAt -le $now -or [long]$d.expiresAt -gt ([DateTimeOffset]$script:phoneRequestStarted).ToUnixTimeSeconds()+135 -or ([datetime]::UtcNow-$script:phoneRequestStarted).TotalSeconds -ge 120 -or ([datetime]::UtcNow-$observedAt).TotalSeconds -ge 5){return}
  $verified=if($d.method -eq 'webauthn'){[OrbyPhoneClient]::VerifyWeb($key,[string]$d.deviceId,[string]$d.id,[string]$d.revision,[string]$d.decision,[string]$d.nonce,[long]$d.expiresAt,[string]$d.signature,[string]$script:phoneConfig.Origin,[string]$d.clientDataJSON,[string]$d.authenticatorData)}else{[OrbyPhoneClient]::Verify($key,[string]$d.deviceId,[string]$d.id,[string]$d.revision,[string]$d.decision,[string]$d.nonce,[long]$d.expiresAt,[string]$d.signature)}
  if(-not $verified){return}
- # Mark before invoking; network retries or another phone must never repeat a click.
+ $choice=-1;$answer=[string]$d.answer
+ if($q.Kind -eq 'stop'){if($d.decision -ne 'stop' -or $q.TaskToken -cne (Get-OrbyPhoneActiveTaskToken)){return}}
+ elseif($q.Kind -eq 'permission'){if($d.decision -notin @('allow','deny')){return}}
+ elseif($d.decision -match '^choice:([0-7])$'){$choice=[int]$Matches[1];if($choice -ge $q.Choices.Length){return}}
+ elseif($d.decision -like 'reply:*'){if(-not $q.CanReply -or [string]::IsNullOrWhiteSpace($answer) -or $answer.Length -gt 2000 -or $d.decision -cne ('reply:'+ [OrbyPhoneClient]::Hash($answer))){return}}
+ else{return}
  $script:phoneConsumed[$r.nativeId]=$true;$script:approvalClickedId=$q.Id;$script:approvalNotice='Sending the trusted phone response...'
- $script:approvalReplyTask=[OrbyApprovalWorker]::Respond($q.Id,($d.decision -eq 'allow'));$script:phoneSubmission=@{Id=$r.id;Task=$script:approvalReplyTask;Request=$r};Update-OrbyApprovalView
+ $script:approvalPollTask=$null;$script:approvalReplyTask=if($q.Kind -eq 'stop'){[OrbyApprovalWorker]::Stop($q.NativeStopId,$q.Target)}elseif($q.Kind -eq 'permission'){[OrbyApprovalWorker]::Respond($q.Id,($d.decision -eq 'allow'))}elseif($choice -ge 0){[OrbyApprovalWorker]::Answer($q.Id,$choice)}else{[OrbyApprovalWorker]::Reply($q.Id,$answer)};$script:phoneSubmission=@{Id=$r.id;Task=$script:approvalReplyTask;Request=$r};Update-OrbyApprovalView
 }
 function Invoke-OrbyPhoneTick {
  Read-OrbyPhoneConfigChange
@@ -51,8 +78,8 @@ function Invoke-OrbyPhoneTick {
  if(-not $script:phoneConfig.Enabled){return}
  try{
   if(-not $script:phoneClient){Reset-OrbyPhoneClient}
-  if($script:phoneExchange){if(-not $script:phoneExchange.IsCompleted){return};$pending=$script:phoneExchange;$script:phoneExchange=$null;if($pending.IsFaulted){throw 'Phone service unavailable'};$response=$pending.Result|ConvertFrom-Json;$sentIds=@($script:phoneSentAcks|ForEach-Object {$_.id});$script:phoneAcks=@($script:phoneAcks|Where-Object {$_.id -notin $sentIds});foreach($d in @($response.decisions)){if($d){Invoke-OrbyPhoneDecision $d}};$script:phoneStatus='PC feed connected · '+$response.phoneCount+' trusted phone(s)'}
-  $script:phoneSequence++;$body=@{instance=$script:phoneInstance;sequence=$script:phoneSequence;tasks=@(Get-OrbyPhoneTaskSnapshot);request=(Get-OrbyPhoneRequest);allowRequests=[bool]$script:phoneConfig.Approvals;acks=@($script:phoneAcks)}|ConvertTo-Json -Depth 7 -Compress
+  if($script:phoneExchange){if(-not $script:phoneExchange.IsCompleted){return};$pending=$script:phoneExchange;$script:phoneExchange=$null;if($pending.IsFaulted){throw 'Phone service unavailable'};$response=$pending.Result|ConvertFrom-Json;$script:phoneConnectedAt=[datetime]::UtcNow;$script:phoneReadyCount=[int]$response.phoneReadyCount;$sentIds=@($script:phoneSentAcks|ForEach-Object {$_.id});$script:phoneAcks=@($script:phoneAcks|Where-Object {$_.id -notin $sentIds});foreach($d in @($response.decisions)){if($d){Invoke-OrbyPhoneDecision $d}};$script:phoneStatus='PC feed connected · '+$response.phoneCount+' trusted phone(s)'}
+  $script:phoneSequence++;$body=@{instance=$script:phoneInstance;sequence=$script:phoneSequence;tasks=@(Get-OrbyPhoneTaskSnapshot);request=(Get-OrbyPhoneRequest);allowRequests=[bool]$script:phoneConfig.Approvals;presence=([OrbyPhoneClient]::Presence()|ConvertFrom-Json);acks=@($script:phoneAcks)}|ConvertTo-Json -Depth 7 -Compress
   $script:phoneSentAcks=@($script:phoneAcks);$script:phoneExchange=$script:phoneClient.Exchange($script:phoneInstance,$body)
  }catch{$script:phoneStatus='Phone feed offline. Local approvals still work.'}
  if($script:phoneWindow -and $script:phoneWindow.IsVisible){$script:phoneUi.PhoneMessage.Text=$script:phoneStatus}
@@ -74,6 +101,8 @@ function Update-OrbyPhoneUiTask {
    phones {$script:phoneUi.PhoneDevices.Children.Clear();foreach($p in $r.phones){$row=[Windows.Controls.StackPanel]::new();$row.Margin='0,0,0,12';$label=[Windows.Controls.TextBlock]::new();$label.Text=$p.name+' · '+$p.fingerprint+$(if($p.active){' · connected'}else{' · awaiting PC confirmation'});[void]$row.Children.Add($label);$actions=[Windows.Controls.StackPanel]::new();$actions.Orientation='Horizontal'
     $trust=[Windows.Controls.Button]::new();$trust.Content='Fingerprints match — trust phone';$trust.IsEnabled=(-not $p.active -or $script:phoneConfig.Trusted[$p.id] -cne $p.publicKey);$trust.Tag=$p;$trust.Add_Click({param($sender,$e)$p=$sender.Tag;if([OrbyPhoneClient]::Fingerprint($p.publicKey) -cne $p.fingerprint){throw 'Phone fingerprint mismatch'};$script:phoneConfig.Trusted[$p.id]=$p.publicKey;Save-OrbyPhoneConfig;Start-OrbyPhoneUiRequest 'POST' ('/desktop/phones/'+$p.id+'/trust') @{fingerprint=$p.fingerprint} 'trusted'});[void]$actions.Children.Add($trust)
     $revoke=[Windows.Controls.Button]::new();$revoke.Content='Revoke';$revoke.Tag=$p.id;$revoke.Add_Click({param($sender,$e)$id=[string]$sender.Tag;$script:phoneConfig.Trusted.Remove($id);Save-OrbyPhoneConfig;Start-OrbyPhoneUiRequest 'DELETE' ('/desktop/phones/'+$id) $null 'revoked'});[void]$actions.Children.Add($revoke);[void]$row.Children.Add($actions);[void]$script:phoneUi.PhoneDevices.Children.Add($row)}}
+   trusted {Start-OrbyPhoneUiRequest 'GET' '/desktop/phones' $null 'phones'}
+   revoked {Start-OrbyPhoneUiRequest 'GET' '/desktop/phones' $null 'phones'}
    default {$script:phoneUi.PhoneMessage.Text='Phone access updated. Refresh the list to check it.'}
   }
  }catch{$script:phoneUi.PhoneMessage.Text=$_.Exception.Message}

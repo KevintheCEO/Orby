@@ -1,46 +1,53 @@
-# Connect your iPhone for free
+# Orby on your iPhone — free notifications
 
-This is the foreground Safari / Home Screen version you chose. No Apple membership purchase, TestFlight installation, Android phone or Work chat is needed. It shows the computer's readable ChatGPT, Claude and Gemini task activity. A trusted phone can review and passkey-sign one supported ChatGPT/Codex permission at a time.
+Orby 10.44 and Orby Live 0.3.0 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
 
-**Keep the phone screen open to see updates. This free version has no background Live Activity, Lock Screen feed or phone notifications.** The native iPhone build is separate and deferred.
+## Existing connection
 
-## Pair once
+Keep the same installed Windows Orby folder and existing relay/tunnel. Updating the relay with `scripts/Restart-PhoneRelay.ps1` preserves the current address and phone keys. Updating Windows preserves your settings, paired phone keys and private water data.
 
-1. On Windows, use Orby 10.43. Double-click `Start-PhoneAccess.cmd` in this folder. Wait for “Phone relay ready.” Orby reloads the connection automatically; an older Orby version must be restarted. The helpers stay running in the background.
-2. Open **Orby → Settings → Phone access → Create invitation / QR code**.
-3. Scan that QR code with your iPhone Camera and open the link in **Safari**. The invitation is filled in automatically and expires after five minutes. Do not share it.
-4. Give the phone a name and tap **Connect with passkey**. Complete the iPhone's passkey confirmation. Use a current iOS/Safari version and enable a screen lock and passkeys. The signing key stays in the passkey provider; Orby does not receive your Face ID, passcode or Apple password.
-5. The phone shows a fingerprint and waits. On Windows, click **Refresh phones**, compare the complete fingerprint, then click **Fingerprints match — trust phone**. Until this confirmation, no task details are shared.
-6. Keep Safari open. Start a task on the PC and check that its provider, title and readable activity appear. Try ChatGPT, Claude and Gemini separately. Orby can only show context the connected desktop app exposes.
+On the iPhone, use **Share → Add to Home Screen**, then open the Orby icon. If it is already connected, keep that connection. If it asks to connect, use a fresh invitation from Windows **Settings → Phone access** and confirm the matching fingerprint on the PC. Safari and the Home Screen window may use separate storage; never assume that pairing in Safari also paired the installed web app.
 
-For an app-style window, use Safari's **Share → Add to Home Screen before pairing**, open that icon, then paste a fresh invitation from Windows. Safari and the Home Screen window can use separate storage, so pairing in one does not guarantee the other is connected. Scan-to-Safari is the simplest first test.
+## Enable notifications
 
-## Optional harmless connection test
+1. Open Orby from its **Home Screen icon**, not a normal Safari tab.
+2. Expand **Phone alerts**, tap **Enable notifications**, and allow the iPhone prompt.
+3. Leave **Only notify me when I am away from my PC** enabled for project updates. Windows treats a locked or idle PC as away; it cannot know your physical location. Unanswered questions have the separate five-minute handoff below.
+4. Tap **Test Lock Screen notification**, then lock your iPhone. The test is scheduled ten seconds later. Delivery follows the iPhone notification and Focus settings. An accepted push service response is not proof that the phone displayed it.
+5. Tap the notification to open Orby. Permission notifications open a current review; they never approve anything from the Lock Screen.
 
-After pairing, run `scripts/Run-PhoneConnectionCheck.ps1` on Windows. Refresh Safari, find **Connection test — no action will run**, then tap **Deny test** and confirm your iPhone passkey. Windows verifies the returned signature against its locally pinned phone key and acknowledges the test. The harmless diagnostic lasts ten minutes. Real permission requests still expire after two minutes. Its records are separate from real permission requests: it cannot execute a command, grant access or reach the native approval worker. It works with real permission answering still off.
+Notifications use Web Push, an encrypted subscription and a server key stored in the relay's encrypted database. No Apple signing key is required. [WebKit documents Home Screen notifications and their free developer access](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
 
-This checks the physical phone signature and PC acknowledgement, not a real desktop permission click. A successful result is saved to `outputs/iPhone-connection-check.json` on this workspace PC.
+## Five-minute question handoff
 
-## Test a supported approval
+A supported question or permission appears in desktop Orby first. If it is still unanswered after five minutes, Windows rechecks the actual current controls. With an online relay and a trusted phone subscribed for notifications, the desktop question overlay closes to the usual Home/notch view and the current request is sent to the phone. Without a ready phone, the PC question stays available.
 
-Task viewing works with permission answering off. To test answering, first enable **Let trusted phones answer supported requests** in Windows Phone access and **Save connection**.
+The notification contains a short generic alert, not the question text, commands or conversation transcript. Tapping it opens the exact current question inside Orby. Answer options match the PC. Where the desktop form provides an unambiguous writable response field, a phone text box is available; use the iPhone keyboard microphone to dictate. Tap **Send answer** and confirm the passkey before anything is sent.
 
-Use a harmless, deliberately approval-gated task in a disposable ChatGPT/Codex project. Keep its actual permission card available on the PC. On your phone, open **Review exact request**, read the complete action, check **I have read the complete action**, then tap **Allow once** or **Deny**. Confirm the passkey prompt. Each signature binds that one choice to the exact request and expires with it.
+Permission requests use **Allow once / Deny**. Answer choices, custom text and stop actions have distinct signed action types; an answer cannot become a permission approval. Each signing challenge has a two-minute lifetime. If a question remains pending, Windows can issue a fresh challenge only after rechecking the same exact native question; old signatures cannot answer the new challenge. Changed, answered, revoked or offline requests are rejected.
 
-The phone shows recorded / waiting for PC, then the Windows acknowledgement. “Submitted” or “resolved” confirms handling of the permission card, not successful completion of the tool action. Changed prompts, requests older than two minutes, sleeping PCs, revoked phones and repeated responses must fail closed. Do not weaken the desktop AI's approval policy to force a test.
+A **Stop this task** control is offered only for a single current ChatGPT/Codex task with a matching visible window and one accessible Stop control. It is bound to that task's turn and requires explicit review and phone confirmation. Ambiguous controls and unsupported apps stay on the PC. This is not unrestricted remote control of every AI app.
 
-Remote answering currently supports one unambiguous, accessible **ChatGPT/Codex Allow once / Deny** card. Arbitrary Claude/Gemini approvals and general questions remain on the PC. Their readable task activity is still shown.
+After a local answer is submitted, Orby discards older request scans and clears the answered overlay. The journal reader now follows complete appended lines rather than rereading a long conversation on every update. A submitted reply is still distinguished from confirmed resolution and successful tool execution.
 
-## Away from home
+## Read activity
 
-After pairing, switch the iPhone to mobile data and check that the same task feed refreshes. The Windows PC, relay and tunnel must stay awake and online. This is not an always-on hosted service.
+The phone groups readable activity by provider and project. It shows the current step and task count instead of mirroring the desktop conversation. Task viewing covers available ChatGPT, Claude and Gemini contexts. Interactive question, permission and stop handling currently covers supported ChatGPT/Codex controls. Claude/Gemini arbitrary desktop actions are not implemented.
 
-The temporary HTTPS address changes when the helpers restart. Run `Stop-PhoneAccess.cmd`, then `Start-PhoneAccess.cmd` for a fresh session. Create a new invitation and pair again; passkeys are bound to the old hostname. Revoke old entries in Windows so they do not fill the four-phone limit. Orby 10.43 reloads the new address automatically. A stable domain and host can remove this step later.
+Keep the Windows PC, relay and tunnel awake and online. The Home Screen app need not stay open for permitted notifications, but it must open to fetch the exact current request and confirm your answer. A sleeping PC cannot carry out phone decisions.
 
-To stop sharing, disable **Enable phone access** and save, revoke the phone in Windows, or choose **Disconnect this phone** in Safari. Disconnection cannot undo an action already accepted. Task records are encrypted at rest and transported over HTTPS; the relay host can read task text, so this is not end-to-end encryption.
+## Pairing and reset
 
-## What has actually been tested
+For a first connection, run `Start-PhoneAccess.cmd`, open Windows **Settings → Phone access → Create invitation / QR code**, and use the five-minute invitation in the phone app. Connect with a passkey and compare the complete fingerprint before trusting the phone on the PC. Enable **Let trusted phones answer questions and permissions**, then **Save connection**.
 
-Local tests exercise registration, exact origin, passkey user verification, signature binding, pending-phone isolation, all three task providers, expired/stale requests, revocation and PC acknowledgement. An isolated Chrome browser with a virtual platform authenticator completed the real browser registration/review/sign/ack flow. A physical iPhone Safari test subsequently passed: the user confirmed the task feed over mobile data, and a passkey-signed no-action denial was independently verified on Windows against the pinned phone key and acknowledged. This does not test a real native permission click, background Live Activity or APNs delivery.
+The free temporary tunnel changes hostname after a full stop/start. That requires fresh phone pairing and notification permission/subscription on the new address. A relay-only restart preserves the tunnel address. A stable domain/host is not deployed. Revoke old phone entries so they do not fill the four-phone limit.
 
-The separate native iPhone app and Live Activity extension compiled successfully for both simulator and unsigned device in [the Mac build check](https://github.com/kevinenas/Orby/actions/runs/39993496758). No signed IPA, phone installation or APNs delivery was produced. Native background Live Activities remain deferred under your free-version choice.
+Disable phone access or revoke the phone to stop sharing. You can also turn notifications off in the phone app. Disconnection cannot undo an already accepted action. Task records use encrypted storage and HTTPS; the relay host can read task text, so this is not end-to-end encryption.
+
+## Evidence and limits
+
+The earlier physical iPhone test verified pairing, task display over mobile data and a passkey-signed no-action denial independently checked against the Windows-pinned key. The new notification, five-minute handoff, typed-response and stop paths have automated browser/relay/native fixture checks. Real Home Screen push delivery and a live desktop question response still need the user's iPhone test after this update.
+
+`scripts/Run-PhoneConnectionCheck.ps1` can repeat a harmless ten-minute passkey diagnostic. It never enters the real permission queue or grants access. The physical result is separate from a real native permission click.
+
+The native iPhone app and Live Activity extension previously compiled for simulator and unsigned device on [the cloud Mac](https://github.com/kevinenas/Orby/actions/runs/39993496758). Signing, native installation and native APNs/Live Activity delivery remain deferred under the free-version choice.

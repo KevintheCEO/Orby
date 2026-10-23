@@ -9,7 +9,7 @@ const provider=z.enum(['Codex','Claude Code']);
 const auth=z.string().min(32).max(100);
 const stateSchema=z.object({provider,phase:z.enum(['working','tool','ready','closed']),text:z.string().max(100)}).strict();
 const permissionSchema=z.object({invocation:z.string().uuid(),provider,session:z.string().min(1).max(200),tool:z.string().min(1).max(100),input:z.unknown()}).strict();
-export function createApp({store,adminKey,push,clock=Date.now,browserOrigin=null}) {
+export function createApp({store,adminKey,push,clock=Date.now,browserOrigin=null,webPush=null}) {
   const app=express(); app.disable('x-powered-by'); app.use(express.json({limit:'80kb'}));
   app.use((req,res,next)=>{ res.set('Cache-Control','no-store'); if(req.headers.origin&&!(browserOrigin&&req.headers.origin===browserOrigin&&(req.path.startsWith('/web/')||req.path.startsWith('/iphone/')))) return res.status(403).json({error:'Unexpected origin'});next(); });
   const wrap=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
@@ -90,8 +90,8 @@ export function createApp({store,adminKey,push,clock=Date.now,browserOrigin=null
     store.put('request',r.id,{...r,status:'returned'});res.json({decision:r.decision,revision:r.revision});
   }));
   app.delete('/source/request/:id',wrap(async(req,res)=>{const s=source(req),r=store.get('request',req.params.id);fail(r&&r.sourceId===s.id,404,'Request not found');store.put('request',r.id,{...r,status:'cancelled',decision:undefined});await publish(s.id);res.json({cancelled:true});}));
-  const desktop=mountDesktop(app,{store,adminKey,push,clock,browserOrigin});
-  mountPhoneWeb(app,{store,desktop,origin:browserOrigin,clock});
+  const desktop=mountDesktop(app,{store,adminKey,push,clock,browserOrigin,webPush});
+  mountPhoneWeb(app,{store,desktop,origin:browserOrigin,clock,webPush});
   app.use((err,_req,res,_next)=>res.status(err instanceof z.ZodError?400:err.status||500).json({error:err instanceof z.ZodError?'Invalid request fields':err.status?err.message:'Internal service error'}));
   return {app,snapshot,publish,prune:()=>{prune();desktop.prune();}};
 }

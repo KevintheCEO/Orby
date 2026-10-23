@@ -2,13 +2,14 @@ import { z } from 'zod';
 import { randomUUID, createPublicKey, verify, createHash } from 'node:crypto';
 import { digest, token, fail } from './security.mjs';
 import QRCode from 'qrcode';
+import {decisionFields,validateDecision} from './decision.mjs';
 
 const id=z.string().uuid(),hash=z.string().regex(/^[a-f0-9]{64}$/);
 const provider=z.enum(['ChatGPT','Claude','Gemini']);
 const task=z.object({id:z.string().min(1).max(240),provider,state:z.enum(['working','attention','idle','error']),title:z.string().max(240),detail:z.string().max(600)}).strict();
-const request=z.object({id,nativeId:z.string().min(1).max(200),provider:z.literal('ChatGPT'),reviewText:z.string().min(1).max(8000),revision:hash}).strict();
+const request=z.object({id,nativeId:z.string().min(1).max(200),provider:z.literal('ChatGPT'),reviewText:z.string().min(1).max(8000),revision:hash,kind:z.enum(['permission','question','stop']).default('permission'),choices:z.array(z.string().min(1).max(500)).max(8).default([]),canReply:z.boolean().default(false),handoff:z.boolean().default(false)}).strict();
 const ack=z.object({id,result:z.enum(['submitted','resolved','stale','uncertain'])}).strict();
-const sync=z.object({instance:id,sequence:z.number().int().nonnegative(),tasks:z.array(task).max(64),request:request.nullable(),allowRequests:z.boolean(),acks:z.array(ack).max(16)}).strict();
+const sync=z.object({instance:id,sequence:z.number().int().nonnegative(),tasks:z.array(task).max(64),request:request.nullable(),allowRequests:z.boolean(),acks:z.array(ack).max(16),presence:z.object({away:z.boolean(),idleSeconds:z.number().int().min(0).max(4294967)}).strict().optional()}).strict();
 export const fingerprint=key=>createHash('sha256').update(Buffer.from(key,'base64')).digest('hex').slice(0,12).toUpperCase();
 export function phoneKey(raw){
  const key=Buffer.from(raw,'base64');fail(key.length===65&&key[0]===4,400,'Invalid phone signing key');
@@ -17,7 +18,7 @@ export function phoneKey(raw){
 export function decisionText(deviceId,r,b){return `OrbyPhone.v1\n${deviceId}\n${r.id}\n${r.revision}\n${b.decision}\n${b.nonce}\n${b.expiresAt}`;}
 
 // A separate opt-in desktop protocol. This does not reactivate the withdrawn MCP app.
-export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrigin=null}){
+export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrigin=null,webPush=null}){
  const wrap=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
  const bearer=req=>{const value=req.headers.authorization||'';fail(value.startsWith('Bearer '),401,'Authentication required');return digest(value.slice(7));};
  const source=req=>{const s=store.all('d-source').find(x=>x.hash===bearer(req));fail(s,401,'Invalid PC credential');return s;};
@@ -33,19 +34,20 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrig
  function snapshot(sourceId){
   prune();const link=store.get('d-link',sourceId),connected=online(link);
   const requests=connected?store.all('d-request').filter(r=>r.sourceId===sourceId&&r.instance===link.instance&&r.status==='pending'):[];
-  return {connected,updatedAt:link?Math.floor(link.at/1000):0,tasks:connected?link.tasks:[],requests:requests.map(r=>({id:r.id,provider:r.provider,revision:r.revision,expiresAt:Math.floor(r.expires/1000),status:r.status})),message:connected?'PC connected':'PC offline or feed out of date'};
+  return {connected,updatedAt:link?Math.floor(link.at/1000):0,tasks:connected?link.tasks:[],requests:requests.map(r=>({id:r.id,provider:r.provider,kind:r.kind||'permission',handoff:r.handoff||false,revision:r.revision,expiresAt:Math.floor(r.expires/1000),status:r.status})),message:connected?'PC connected':'PC offline or feed out of date'};
  }
  const deliveries=new Map();
  async function publish(sourceId){
-  const state=snapshot(sourceId),r=state.requests[0],t=state.tasks.find(t=>t.state==='working');
+  const state=snapshot(sourceId),r=state.requests.find(r=>r.kind!=='stop'),t=state.tasks.find(t=>t.state==='working');
   // APNs sees generic state only. Task titles and exact request text stay off the lock-screen push.
-  const content={provider:r?.provider||t?.provider||'Orby',phase:!state.connected?'closed':r?'review':t?'working':'ready',text:!state.connected?'PC offline':r?'Permission requested':t?'Working on your PC':'All quiet',requestId:r?.id||'',revision:r?.revision||'',expiresAt:r?.expiresAt||0,pendingCount:state.requests.length,updatedAt:Math.floor(clock()/1000)};
+  const content={provider:r?.provider||t?.provider||'Orby',phase:!state.connected?'closed':r?'review':t?'working':'ready',text:!state.connected?'PC offline':r?'Permission requested':t?'Working on your PC':'All quiet',requestId:r?.id||'',revision:r?.revision||'',expiresAt:r?.expiresAt||0,pendingCount:state.requests.filter(r=>r.kind!=='stop').length,updatedAt:Math.floor(clock()/1000)};
   for(const p of store.all('d-phone').filter(p=>p.sourceId===sourceId&&p.active&&p.activityToken)){
    const key=[content.phase,content.provider,content.requestId,content.revision].join(':');const last=deliveries.get(p.id);if(last?.key===key&&clock()-last.at<60000)continue;
    // Apple delivery must never stall a PC heartbeat or permission acknowledgement.
    const pending=(last?.pending||Promise.resolve()).then(async()=>{const current=store.get('d-phone',p.id);if(!current?.active||current.activityToken!==p.activityToken)return;try{const result=await push.send(p.activityToken,content);const fresh=store.get('d-phone',p.id);if(fresh?.active&&fresh.activityToken===p.activityToken)store.put('d-phone',p.id,{...fresh,delivery:result.status,activityToken:result.code===410?null:p.activityToken});}catch{/* Push is separate from feed delivery. */}}).catch(()=>{});
    deliveries.set(p.id,{key,at:clock(),pending});
   }
+  webPush?.notify({sourceId,state,link:store.get('d-link',sourceId)});
   return state;
  }
  app.post('/admin/desktop',wrap((req,res)=>{
@@ -68,10 +70,11 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrig
  app.get('/mobile/state',wrap((req,res)=>{const p=mobile(req,false);res.json(p.active?{...snapshot(p.sourceId),deviceId:p.id,active:true}:{connected:false,active:false,deviceId:p.id,tasks:[],requests:[],updatedAt:0,message:'Compare the phone fingerprint, then confirm this phone on the PC'});}));
  app.get('/mobile/request/:id',wrap((req,res)=>{const p=mobile(req),s=snapshot(p.sourceId),r=store.get('d-request',req.params.id);fail(r&&r.sourceId===p.sourceId,404,'Request not found');res.json({id:r.id,provider:r.provider,reviewText:r.reviewText,revision:r.revision,status:s.connected?r.status:'offline',expiresAt:Math.floor(r.expires/1000)});}));
  app.post('/mobile/request/:id/decision',wrap(async(req,res)=>{
-  const p=mobile(req);fail(p.mode!=='web',403,'Use passkey review for this phone');const b=z.object({revision:hash,decision:z.enum(['allow','deny']),nonce:id,expiresAt:z.number().int(),signature:z.string().min(80).max(120)}).strict().parse(req.body);prune();
+  const p=mobile(req);fail(p.mode!=='web',403,'Use passkey review for this phone');const b=z.object({...decisionFields,signature:z.string().min(80).max(120)}).strict().parse(req.body);prune();
   const link=store.get('d-link',p.sourceId),r=store.get('d-request',req.params.id);fail(r&&r.sourceId===p.sourceId,404,'Request not found');
   fail(online(link)&&link.allowRequests&&r.instance===link.instance&&r.id===link.requestId&&r.status==='pending'&&r.revision===b.revision&&r.expires>clock()&&b.expiresAt===Math.floor(r.expires/1000),409,'PC or request is no longer current');
   fail(digest(r.reviewText)===b.revision,409,'Request text changed');
+  validateDecision(r,b);
   fail(verify('sha256',Buffer.from(decisionText(p.id,r,b)),phoneKey(p.publicKey),Buffer.from(b.signature,'base64')),403,'Phone signature did not verify');
   fail(!store.get('d-nonce',p.id+':'+b.nonce),409,'Decision replay');store.put('d-nonce',p.id+':'+b.nonce,{id:p.id+':'+b.nonce,at:clock()});
   store.put('d-request',r.id,{...r,status:'decided',signed:{...b,deviceId:p.id}});await publish(p.sourceId);res.json({recorded:true});
@@ -91,7 +94,7 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrig
   }
   const link={...b,requestId:b.allowRequests?b.request?.id||'':'',at:clock()};delete link.request;delete link.acks;store.put('d-link',s.id,link);
   const decisions=store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId&&r.status==='decided').map(r=>({id:r.id,nativeId:r.nativeId,revision:r.revision,...r.signed}));
-  const state=await publish(s.id);res.json({connected:true,requests:store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId).map(r=>({id:r.id,expiresAt:Math.floor(r.expires/1000),status:r.status})),decisions,phoneCount:store.all('d-phone').filter(p=>p.sourceId===s.id&&p.active).length,state});
+  const state=await publish(s.id);res.json({connected:true,requests:store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId).map(r=>({id:r.id,expiresAt:Math.floor(r.expires/1000),status:r.status})),decisions,phoneCount:store.all('d-phone').filter(p=>p.sourceId===s.id&&p.active).length,phoneReadyCount:store.all('d-phone').filter(p=>p.sourceId===s.id&&p.active&&p.mode==='web'&&p.pushSubscription&&p.pushOrigin===browserOrigin).length,state});
  }));
  return {snapshot,prune,mobile,source,online,publish};
 }

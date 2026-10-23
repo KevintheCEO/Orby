@@ -1,32 +1,24 @@
 # Orby phone access
 
-An opt-in companion for desktop Orby 10.43. See readable ChatGPT, Claude and Gemini task activity on your iPhone. Review and passkey-sign one supported ChatGPT/Codex Allow once / Deny request. Windows independently verifies the signature and rechecks the current permission card before answering.
+Orby 10.44 + Orby Live 0.3.0 provide free iPhone Home Screen notifications, a compact live project/status overview and signed responses to supported desktop requests. Follow [the iPhone guide](docs/IPHONE-SETUP.md).
 
-**The current iPhone route is free Safari / Home Screen access while open. It does not provide background Live Activities or phone notifications.** Follow [the iPhone setup guide](docs/IPHONE-SETUP.md): start the Windows helpers, create a QR invitation in Orby, scan it, connect with a passkey and compare the fingerprint on the PC. No Apple purchase, Android phone or access to Work chats is needed.
+- A still-unanswered ChatGPT/Codex question hands off after five minutes, when a trusted notification-capable phone and the relay are ready. Otherwise it remains on the PC.
+- Tap a notification to open the exact current question. Choose an answer or, where the desktop form supports it, type/dictate a response. Sending requires an explicit tap and passkey confirmation.
+- Permission prompts use Allow once / Deny. Stop is offered only for a single identifiable current task with an unambiguous visible Stop control. Windows independently verifies the signed action and rechecks its exact native target.
+- The phone shows readable ChatGPT, Claude and Gemini project summaries. Arbitrary Claude/Gemini remote controls are not supported.
+- Project notifications wait until the PC is idle/locked by default. A visible Orby phone screen suppresses duplicate background alerts. Question text and commands stay out of notification previews.
+- This is a Home Screen web app, not a native Live Activity or Dynamic Island widget. No Apple membership purchase is needed. Native iPhone signing and Live Activity delivery are deferred.
 
-| Function | Scope |
-| --- | --- |
-| Task feed | Readable ChatGPT, Claude and Gemini contexts; unavailable details are not invented |
-| Phone permissions | One current, unambiguous, accessible ChatGPT/Codex Allow once / Deny card; explicit opt-in |
-| Other approvals / questions | Stay on the PC |
-| Free iPhone web app | Safari passkey pairing, exact-action review and signed decisions; keep open |
-| Native iPhone | Simulator and unsigned device compile passed on a cloud Mac; signing, installation and APNs deferred |
-| Android | Existing Android 11+ test build; not required for iPhone; no physical-device proof |
-| Away from home | Temporary HTTPS tunnel while PC and helpers stay awake and online |
-| Sleeping PC / unavailable feed | No new approval accepted |
+The PC and local HTTPS helpers must remain awake and online. The temporary tunnel changes address on a full restart, requiring new pairing/subscriptions. No stable hosted service is deployed. A relay-only restart preserves the existing address and keys.
 
-Pending phones cannot see tasks. Each invitation is single use and expires in five minutes; the PC confirms each phone fingerprint. Up to four phones can be paired. Permission requests expire after two minutes; changed prompts, stale PC snapshots, replays, disabled approvals and revoked phones are rejected. An acknowledgement does not prove that a tool action succeeded. Disconnecting cannot undo an action already accepted.
+The withdrawn MCP connector stays withdrawn. Public packages exclude personal water files, credentials and databases. Phone tokens/keys are protected locally; relay records are encrypted at rest and HTTPS protects transport. The relay operator can read task/request content; this is not end-to-end encryption.
 
-Phone credentials are protected locally; passkeys are held by the authenticator. The PC credential and pinned phone keys use Windows DPAPI. Relay records are encrypted at rest and HTTPS protects transport. This is **not end-to-end encryption of task text**: the relay operator can read the relayed content and must protect the database and storage key.
+## Verification
 
-The withdrawn ChatGPT MCP plugin is not reinstalled. Personal water tracking is excluded from public packages. The earlier hook prototype remains in `hooks/` with separate regression tests and [historical documentation](docs/HOOK-PROTOTYPE.md); no hooks are silently installed.
+Use Node 24+: `npm.cmd ci --ignore-scripts`, then `npm.cmd test`. Windows checks use the adjacent source or `windows/` from the source ZIP. The optional isolated Chrome test uses a virtual authenticator when `ORBY_PLAYWRIGHT_ROOT` points to a Playwright package directory. These automated checks are separate from real iPhone delivery.
 
-## Development and deployment
+The prior physical iPhone pairing, mobile-data task feed and no-action signed denial passed. New notification delivery, five-minute handoff and real custom response/stop behavior still require a physical-device test after installation. Native simulator/unsigned device compilation passed previously; no signed iPhone app or native push delivery was produced.
 
-Use Node 24+: `npm.cmd ci --ignore-scripts`, then `npm.cmd test`. Windows adapter tests use the adjacent Orby source or `windows/` in the source ZIP. The optional browser test uses an isolated Chrome profile and virtual authenticator when `ORBY_PLAYWRIGHT_ROOT` points to a Playwright package directory. It never opens a user's browser session. Automated/simulated results are not physical iPhone proof.
+`npm.cmd run package` exports sanitized source, including the service worker, web app, relay, native prototypes and Windows adapter. It excludes private data and signing keys. `Start-PhoneAccess.cmd` starts the private test helpers; `Stop-PhoneAccess.cmd` stops only those recorded helpers. `scripts/Restart-PhoneRelay.ps1` reloads the relay without changing the tunnel. Native Android sources are retained as a separate earlier prototype; the current user is testing iPhone.
 
-`npm.cmd run package` creates the source ZIP with the web assets, relay, native sources and Windows adapter. It excludes credentials, databases, signing keys, generated builds and personal water files. The native iPhone [Mac build check](https://github.com/kevinenas/Orby/actions/runs/39993496758) produced compile diagnostics, not an installable IPA. Physical iPhone Safari pairing and task delivery over mobile data were confirmed by the user. Its no-action passkey denial was independently verified by Windows against the pinned phone key and acknowledged. Real native permission execution and background delivery remain separate, unverified tests.
-
-`Start-PhoneAccess.cmd` starts hidden local relay/tunnel helpers, protects private files and enables task sharing with remote approvals off. `Stop-PhoneAccess.cmd` stops only its recorded helpers. Restarting the temporary tunnel changes its hostname and requires new phone pairing/passkeys; Orby 10.43 reloads the Windows connection automatically. No stable hosted service is deployed.
-
-The Dockerfile includes the web assets and is prepared for a persistent relay behind an HTTPS proxy. Configure `PUBLIC_ORIGIN`, `ADMIN_TOKEN`, `STORAGE_KEY` and a protected persistent `/data` volume; provision the desktop credential through the administrator endpoint. Do not expose the container's HTTP listener directly. A production hosted deployment has not been completed or tested.
+The Dockerfile includes the web app and is prepared for a protected persistent relay behind an HTTPS proxy. Configure `PUBLIC_ORIGIN`, `ADMIN_TOKEN`, `STORAGE_KEY` and a persistent `/data` volume. Do not expose its HTTP listener publicly. A hosted production deployment has not been completed.

@@ -7,8 +7,20 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
+using System.Runtime.InteropServices;
 
 public sealed class OrbyPhoneClient : IDisposable {
+ [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO {public uint cbSize,dwTime;}
+ [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO value);
+ [DllImport("user32.dll",SetLastError=true)] static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
+ [DllImport("user32.dll")] static extern bool SwitchDesktop(IntPtr desktop);
+ [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
+ public static string Presence(){
+  try{var input=new LASTINPUTINFO{cbSize=(uint)Marshal.SizeOf(typeof(LASTINPUTINFO))};if(!GetLastInputInfo(ref input))return "{\"away\":false,\"idleSeconds\":0}";
+   uint idle=unchecked((uint)Environment.TickCount-input.dwTime)/1000;bool locked=false;var desktop=OpenInputDesktop(0,false,0x100);if(desktop==IntPtr.Zero)locked=true;else try{locked=!SwitchDesktop(desktop);}finally{CloseDesktop(desktop);}
+   return new JavaScriptSerializer().Serialize(new {away=locked||idle>=60,idleSeconds=idle});
+  }catch{return "{\"away\":false,\"idleSeconds\":0}";}
+ }
  readonly HttpClient http; readonly Uri origin; readonly string credential; string session="";
  public OrbyPhoneClient(string address,string secret,bool localTest){
   origin=new Uri(address);if(!String.IsNullOrEmpty(origin.UserInfo)||origin.AbsolutePath!="/"||!String.IsNullOrEmpty(origin.Query)||!String.IsNullOrEmpty(origin.Fragment)||!(origin.Scheme=="https"||(localTest&&origin.Scheme=="http"&&origin.IsLoopback)))throw new ArgumentException("Use an HTTPS relay address without a path.");
@@ -42,7 +54,7 @@ public sealed class OrbyPhoneClient : IDisposable {
   using(var cng=CngKey.Import(blob,CngKeyBlobFormat.EccPublicBlob))using(var ec=new ECDsaCng(cng)){ec.HashAlgorithm=CngAlgorithm.Sha256;return ec.VerifyData(message,Signature(signature));}
  }
  static byte[] UrlBytes(string value){if(value.Length>12000)throw new InvalidDataException();string s=value.Replace('-','+').Replace('_','/');return Convert.FromBase64String(s.PadRight(s.Length+(4-s.Length%4)%4,'='));}
- static bool Fields(string deviceId,string requestId,string revision,string decision,string nonce){Guid parsed;return Guid.TryParse(deviceId,out parsed)&&Guid.TryParse(requestId,out parsed)&&Guid.TryParse(nonce,out parsed)&&System.Text.RegularExpressions.Regex.IsMatch(revision,"^[a-f0-9]{64}$")&&(decision=="allow"||decision=="deny");}
+ static bool Fields(string deviceId,string requestId,string revision,string decision,string nonce){Guid parsed;return Guid.TryParse(deviceId,out parsed)&&Guid.TryParse(requestId,out parsed)&&Guid.TryParse(nonce,out parsed)&&System.Text.RegularExpressions.Regex.IsMatch(revision,"^[a-f0-9]{64}$")&&(decision=="allow"||decision=="deny"||decision=="stop"||System.Text.RegularExpressions.Regex.IsMatch(decision,"^(choice:[0-7]|reply:[a-f0-9]{64})$"));}
  static string Decision(string deviceId,string requestId,string revision,string decision,string nonce,long expiresAt){return "OrbyPhone.v1\n"+deviceId+"\n"+requestId+"\n"+revision+"\n"+decision+"\n"+nonce+"\n"+expiresAt;}
  public static bool Verify(string key,string deviceId,string requestId,string revision,string decision,string nonce,long expiresAt,string signature){
   try{

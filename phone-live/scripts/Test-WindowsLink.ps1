@@ -4,7 +4,7 @@ Add-Type -Path (Join-Path $SourceRoot 'Phone-Link.cs') -ReferencedAssemblies Sys
 Add-Type -TypeDefinition @'
 using System.Threading.Tasks;
 public class PhoneTestReply {public bool Resolved=true;public bool Submitted=true;}
-public static class OrbyApprovalWorker {public static int Calls; public static Task<PhoneTestReply> Respond(string id,bool allow){Calls++;return Task.FromResult(new PhoneTestReply());}}
+public static class OrbyApprovalWorker {public static int Calls;public static string LastStop="";public static Task<PhoneTestReply> Stop(string id,string project){Calls++;LastStop=project;return Task.FromResult(new PhoneTestReply());}public static int LastChoice=-1;public static string LastReply="";public static Task<PhoneTestReply> Answer(string id,int choice){Calls++;LastChoice=choice;return Task.FromResult(new PhoneTestReply());}public static Task<PhoneTestReply> Reply(string id,string text){Calls++;LastReply=text;return Task.FromResult(new PhoneTestReply());} public static Task<PhoneTestReply> Respond(string id,bool allow){Calls++;return Task.FromResult(new PhoneTestReply());}}
 '@
 $f=Get-Content -LiteralPath $Fixture -Raw|ConvertFrom-Json
 function Assert($condition,[string]$reason){if(-not $condition){throw $reason};$script:count++}
@@ -27,7 +27,7 @@ $rejected=$false;try{$client=[OrbyPhoneClient]::new('http://example.com','x'*43,
 $rejected=$false;try{$client=[OrbyPhoneClient]::new('https://example.com/path','x'*43,$false)}catch{$rejected=$true};Assert $rejected 'Non-root relay address accepted'
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $SourceRoot 'Phone-Link.ps1'),[ref]$tokens,[ref]$errors)
 Assert ($errors.Count -eq 0) 'Windows phone module did not parse'
-foreach($name in @('Get-OrbyPhoneRequest','Invoke-OrbyPhoneDecision','Invoke-OrbyPhoneTick','Read-OrbyPhoneConfigChange')){$node=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object Name -eq $name|Select-Object -First 1;. ([scriptblock]::Create($node.Extent.Text))}
+foreach($name in @('Get-OrbyPhoneReviewText','Test-OrbyPhoneHandoff','Get-OrbyPhoneActiveTaskToken','Get-OrbyPhoneStopRequest','Get-OrbyPhoneRequest','Invoke-OrbyPhoneDecision','Invoke-OrbyPhoneTick','Read-OrbyPhoneConfigChange')){$node=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object Name -eq $name|Select-Object -First 1;. ([scriptblock]::Create($node.Extent.Text))}
 $script:phoneNoNetwork=$true
 function Update-OrbyApprovalView {}
 $script:phoneConfig=@{Enabled=$true;Approvals=$true;Trusted=@{}};$script:phoneConfig.Trusted[$f.deviceId]=$f.key
@@ -47,6 +47,30 @@ $script:approvalReplyTask=$null;$script:phoneSubmission=$null;$script:phoneConsu
 $d|Add-Member NoteProperty method 'webauthn';$d|Add-Member NoteProperty clientDataJSON $f.web.clientDataJSON;$d|Add-Member NoteProperty authenticatorData $f.web.authenticatorData;$d.signature=$webSignature
 Invoke-OrbyPhoneDecision $d;Assert ([OrbyApprovalWorker]::Calls -eq 2) 'WebAuthn request did not reach exact native responder'
 Invoke-OrbyPhoneDecision $d;Assert ([OrbyApprovalWorker]::Calls -eq 2) 'WebAuthn response clicked twice'
+# Questions wait five minutes, preserve exact choices and bind dictated text.
+$script:approvalReplyTask=$null;$script:phoneSubmission=$null;$script:phoneConsumed=@{};$script:approvalAnswered=''
+$script:approvalRequest=[pscustomobject]@{Available=$true;CanAnswer=$true;CanReply=$true;Kind='question';Id='native-question';Title='Question fixture';Detail='Choose an answer or write your response, then send it.';Choices=@('First','Second')}
+$script:phoneConnectedAt=[datetime]::UtcNow;$script:phoneReadyCount=1;$script:approvalRequestAt=[datetime]::UtcNow;$script:approvalFirstSeen=[datetime]::UtcNow.AddSeconds(-299)
+Assert (-not (Get-OrbyPhoneRequest)) 'Question handed off before five minutes'
+$script:approvalFirstSeen=[datetime]::UtcNow.AddSeconds(-301);$hand=Get-OrbyPhoneRequest
+Assert ($hand.kind -eq 'question' -and $hand.handoff -and $hand.choices.Count -eq 2 -and $hand.reviewText -ceq $f.questionReview) 'Question handoff lost its exact choices'
+$script:phoneLocalRequest.id=$f.questionId;$script:phoneRequestStarted=[datetime]::UtcNow
+function QuestionDecision($b){$signature=$b.proof.signature.Replace('-','+').Replace('_','/');[pscustomobject]@{id=$f.questionId;nativeId='native-question';revision=$f.questionRevision;deviceId=$f.deviceId;decision=$b.decision;answer=$b.answer;nonce=$b.nonce;expiresAt=$b.expiresAt;method='webauthn';signature=[Convert]::ToBase64String([Convert]::FromBase64String($signature.PadRight($signature.Length+(4-$signature.Length%4)%4,'=')));clientDataJSON=$b.proof.clientDataJSON;authenticatorData=$b.proof.authenticatorData}}
+$qdecision=QuestionDecision $f.questionChoice
+$script:approvalRequest.Choices[1]='Changed choice';Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 2) 'Changed choice list accepted an old phone response'
+$script:approvalRequest.Choices[1]='Second';Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 3 -and [OrbyApprovalWorker]::LastChoice -eq 1) 'Exact phone choice did not reach native Answer'
+$script:approvalReplyTask=$null;$script:phoneSubmission=$null;$script:phoneConsumed=@{};$qdecision=QuestionDecision $f.questionReply;$qdecision.answer='Changed after signing'
+Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 3) 'Changed dictated response was accepted'
+$qdecision.answer=$f.questionAnswer;Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 4 -and [OrbyApprovalWorker]::LastReply -ceq $f.questionAnswer) 'Exact dictated response did not reach native Reply'
+$script:approvalReplyTask=$null;$script:phoneSubmission=$null;$script:phoneConsumed=@{};$script:phoneStopAt=[datetime]::UtcNow
+$script:orbyActiveTasks=@([pscustomobject]@{Id='fixture-task';Turn='fixture-turn';Started='fixed-start';State='working';Provider='chatgpt';Title='Fixture project'})
+$script:phoneStopRequest=[pscustomobject]@{TaskToken=(Get-OrbyPhoneActiveTaskToken);NativeStopId='fixture-ui-stop';Id='native-stop';Kind='stop';Target='Fixture project';Available=$true;CanAnswer=$true;Title='Stop current task: Fixture project';Detail='Stop only this task.'}
+$script:phoneLocalRequest=@{id=$f.stopId;nativeId='native-stop';kind='stop';revision=$f.stopRevision};$script:phoneRequestStarted=[datetime]::UtcNow
+$stopDecision=QuestionDecision $f.stopDecision;$stopDecision.id=$f.stopId;$stopDecision.nativeId='native-stop';$stopDecision.revision=$f.stopRevision
+$script:orbyActiveTasks[0].Turn='new-turn';Invoke-OrbyPhoneDecision $stopDecision;Assert ([OrbyApprovalWorker]::Calls -eq 4) 'Old Stop response targeted a newer turn';$script:orbyActiveTasks[0].Turn='fixture-turn'
+Invoke-OrbyPhoneDecision $stopDecision;Assert ([OrbyApprovalWorker]::Calls -eq 5 -and [OrbyApprovalWorker]::LastStop -ceq 'Fixture project') 'Signed Stop did not target the exact current project'
+Invoke-OrbyPhoneDecision $stopDecision;Assert ([OrbyApprovalWorker]::Calls -eq 5) 'Stop was replayed'
+$script:approvalAnswered=$script:approvalRequest.Id;$script:phoneSubmission=$null;Assert (-not (Get-OrbyPhoneRequest)) 'An answered question was offered again'
 # A new acknowledgement arriving while an older HTTP batch is in flight must survive.
 $script:phoneSubmission=$null;$script:phoneConfig.Enabled=$true;$script:phoneClient=$null
 $script:phoneAcks=@(@{id='old';result='resolved'},@{id='new';result='resolved'});$script:phoneSentAcks=@(@{id='old';result='resolved'})
