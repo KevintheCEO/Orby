@@ -133,7 +133,9 @@ enum DesktopService {
 }
 struct DesktopPhoneHome: View {
     @EnvironmentObject var model: DesktopPhoneModel
-    @State private var origin = "", invite = "", name = "My iPhone"
+    @State private var origin = ""
+    @State private var invite = ""
+    @State private var name = "My iPhone"
     @State private var busy = false
     var body: some View {
         NavigationStack {
@@ -176,7 +178,8 @@ struct DesktopReviewScreen: View {
     let id: String
     @EnvironmentObject var model: DesktopPhoneModel
     @State private var detail: DesktopReview?
-    @State private var read = false, busy = false
+    @State private var read = false
+    @State private var busy = false
     @State private var message = ""
     var body: some View {
         NavigationStack {
