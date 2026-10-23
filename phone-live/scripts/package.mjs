@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const staging=join(mkdtempSync(join(tmpdir(),'orby-live-package-')),'Orby-Live-Source');mkdirSync(staging);
 const forbidden=/^(\.data|\.desktop-data|generated|node_modules|Personal|orby-connect|build|DerivedData|artifacts)$|\.(p8|p12|pfx|jks|keystore|mobileprovision|dpapi|sqlite|key|apk)$/i;
-const allowed=['README.md','package.json','package-lock.json','.gitignore','.dockerignore','Dockerfile','Start-PhoneAccess.cmd','Stop-PhoneAccess.cmd','relay','hooks','scripts','ios','android','tests','docs','.github'];
+const allowed=['README.md','package.json','package-lock.json','.gitignore','.dockerignore','Dockerfile','Start-PhoneAccess.cmd','Stop-PhoneAccess.cmd','relay','web','hooks','scripts','ios','android','tests','docs','.github'];
 for(const name of allowed){const p=resolve(root,name);if(existsSync(p))cpSync(p,join(staging,name),{recursive:true,filter:src=>!forbidden.test(basename(src))});}
 const adjacent=resolve(root,'../work/central17-source'),windows=existsSync(adjacent)?adjacent:resolve(root,'windows');mkdirSync(join(staging,'windows'));for(const name of ['Phone-Link.cs','Phone-Link.ps1','Phone-Link.xaml'])cpSync(join(windows,name),join(staging,'windows',name));
 function check(dir){for(const e of readdirSync(dir)){const p=join(dir,e);if(lstatSync(p).isSymbolicLink())throw new Error('Links are not allowed in source package');if(forbidden.test(e))throw new Error('Private or unrelated files in package');if(lstatSync(p).isDirectory())check(p);}}

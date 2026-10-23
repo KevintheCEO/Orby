@@ -3,14 +3,15 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { digest, token, fail } from './security.mjs';
 import { mountDesktop } from './desktop.mjs';
+import { mountPhoneWeb } from './web.mjs';
 
 const provider=z.enum(['Codex','Claude Code']);
 const auth=z.string().min(32).max(100);
 const stateSchema=z.object({provider,phase:z.enum(['working','tool','ready','closed']),text:z.string().max(100)}).strict();
 const permissionSchema=z.object({invocation:z.string().uuid(),provider,session:z.string().min(1).max(200),tool:z.string().min(1).max(100),input:z.unknown()}).strict();
-export function createApp({store,adminKey,push,clock=Date.now}) {
+export function createApp({store,adminKey,push,clock=Date.now,browserOrigin=null}) {
   const app=express(); app.disable('x-powered-by'); app.use(express.json({limit:'80kb'}));
-  app.use((req,res,next)=>{ res.set('Cache-Control','no-store'); if(req.headers.origin) return res.status(403).json({error:'Browser requests are not supported'});next(); });
+  app.use((req,res,next)=>{ res.set('Cache-Control','no-store'); if(req.headers.origin&&!(browserOrigin&&req.headers.origin===browserOrigin&&(req.path.startsWith('/web/')||req.path.startsWith('/iphone/')))) return res.status(403).json({error:'Unexpected origin'});next(); });
   const wrap=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
   const bearer=req=>{const s=req.headers.authorization||'';fail(s.startsWith('Bearer '),401,'Authentication required');return s.slice(7);};
   const source=req=>{const hash=digest(bearer(req)),s=store.all('source').find(x=>x.hash===hash);fail(s,401,'Invalid source credential');return s;};
@@ -89,7 +90,8 @@ export function createApp({store,adminKey,push,clock=Date.now}) {
     store.put('request',r.id,{...r,status:'returned'});res.json({decision:r.decision,revision:r.revision});
   }));
   app.delete('/source/request/:id',wrap(async(req,res)=>{const s=source(req),r=store.get('request',req.params.id);fail(r&&r.sourceId===s.id,404,'Request not found');store.put('request',r.id,{...r,status:'cancelled',decision:undefined});await publish(s.id);res.json({cancelled:true});}));
-  const desktop=mountDesktop(app,{store,adminKey,push,clock});
+  const desktop=mountDesktop(app,{store,adminKey,push,clock,browserOrigin});
+  mountPhoneWeb(app,{store,desktop,origin:browserOrigin,clock});
   app.use((err,_req,res,_next)=>res.status(err instanceof z.ZodError?400:err.status||500).json({error:err instanceof z.ZodError?'Invalid request fields':err.status?err.message:'Internal service error'}));
   return {app,snapshot,publish,prune:()=>{prune();desktop.prune();}};
 }

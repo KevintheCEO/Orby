@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { randomUUID, createPublicKey, verify } from 'node:crypto';
 import { digest, token, fail } from './security.mjs';
+import QRCode from 'qrcode';
 
 const id=z.string().uuid(),hash=z.string().regex(/^[a-f0-9]{64}$/);
 const provider=z.enum(['ChatGPT','Claude','Gemini']);
@@ -16,7 +17,7 @@ export function phoneKey(raw){
 export function decisionText(deviceId,r,b){return `OrbyPhone.v1\n${deviceId}\n${r.id}\n${r.revision}\n${b.decision}\n${b.nonce}\n${b.expiresAt}`;}
 
 // A separate opt-in desktop protocol. This does not reactivate the withdrawn MCP app.
-export function mountDesktop(app,{store,adminKey,push,clock=Date.now}){
+export function mountDesktop(app,{store,adminKey,push,clock=Date.now,browserOrigin=null}){
  const wrap=fn=>(req,res,next)=>Promise.resolve().then(()=>fn(req,res)).catch(next);
  const bearer=req=>{const value=req.headers.authorization||'';fail(value.startsWith('Bearer '),401,'Authentication required');return digest(value.slice(7));};
  const source=req=>{const s=store.all('d-source').find(x=>x.hash===bearer(req));fail(s,401,'Invalid PC credential');return s;};
@@ -26,6 +27,7 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now}){
   for(const i of store.all('d-invite'))if(i.expires<=clock())store.remove('d-invite',i.hash);
   for(const p of store.all('d-phone'))if(!p.active&&p.created<clock()-600000)store.remove('d-phone',p.id);
   for(const n of store.all('d-nonce'))if(n.at<clock()-86400000)store.remove('d-nonce',n.id);
+  for(const r of store.all('d-web-reg'))if(r.expires<=clock())store.remove('d-web-reg',r.id);
  }
  const online=link=>!!link&&clock()-link.at<15000;
  function snapshot(sourceId){
@@ -50,7 +52,7 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now}){
   fail(bearer(req)===digest(adminKey),401,'Invalid administrator credential');const name=z.string().min(1).max(80).parse(req.body.name),secret=token(),sourceId=randomUUID();
   store.put('d-source',sourceId,{id:sourceId,name,hash:digest(secret)});res.status(201).json({id:sourceId,token:secret});
  }));
- app.post('/desktop/invite',wrap((req,res)=>{const s=source(req),invite=token();for(const old of store.all('d-invite').filter(i=>i.sourceId===s.id))store.remove('d-invite',old.hash);store.put('d-invite',digest(invite),{hash:digest(invite),sourceId:s.id,expires:clock()+300000});res.json({invite,expiresAt:Math.floor((clock()+300000)/1000)});}));
+ app.post('/desktop/invite',wrap(async(req,res)=>{const s=source(req),invite=token();for(const old of store.all('d-invite').filter(i=>i.sourceId===s.id))store.remove('d-invite',old.hash);store.put('d-invite',digest(invite),{hash:digest(invite),sourceId:s.id,expires:clock()+300000});const phoneUrl=browserOrigin?browserOrigin+'/iphone/#invite='+invite:null;const qr=phoneUrl?await QRCode.toDataURL(phoneUrl,{width:280,margin:3,errorCorrectionLevel:'M'}):null;res.json({invite,expiresAt:Math.floor((clock()+300000)/1000),phoneUrl,qr});}));
  app.post('/desktop/session',wrap((req,res)=>{const s=source(req),instance=id.parse(req.body.instance);fail(!(s.retired||[]).includes(instance),409,'Retired PC instance');if(s.instance!==instance){for(const r of store.all('d-request').filter(r=>r.sourceId===s.id&&['pending','decided'].includes(r.status)))store.put('d-request',r.id,{...r,status:'cancelled',signed:undefined});store.remove('d-link',s.id);store.put('d-source',s.id,{...s,instance,retired:[...(s.retired||[]),...(s.instance?[s.instance]:[])].slice(-128)});}res.json({connected:true});}));
  app.post('/mobile/pair',wrap((req,res)=>{
   const b=z.object({invite:z.string().min(32).max(100),name:z.string().min(1).max(60),publicKey:z.string().max(120)}).strict().parse(req.body);phoneKey(b.publicKey);prune();
@@ -66,7 +68,7 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now}){
  app.get('/mobile/state',wrap((req,res)=>{const p=mobile(req,false);res.json(p.active?{...snapshot(p.sourceId),deviceId:p.id,active:true}:{connected:false,active:false,deviceId:p.id,tasks:[],requests:[],updatedAt:0,message:'Compare the phone fingerprint, then confirm this phone on the PC'});}));
  app.get('/mobile/request/:id',wrap((req,res)=>{const p=mobile(req),s=snapshot(p.sourceId),r=store.get('d-request',req.params.id);fail(r&&r.sourceId===p.sourceId,404,'Request not found');res.json({id:r.id,provider:r.provider,reviewText:r.reviewText,revision:r.revision,status:s.connected?r.status:'offline',expiresAt:Math.floor(r.expires/1000)});}));
  app.post('/mobile/request/:id/decision',wrap(async(req,res)=>{
-  const p=mobile(req),b=z.object({revision:hash,decision:z.enum(['allow','deny']),nonce:id,expiresAt:z.number().int(),signature:z.string().min(80).max(120)}).strict().parse(req.body);prune();
+  const p=mobile(req);fail(p.mode!=='web',403,'Use passkey review for this phone');const b=z.object({revision:hash,decision:z.enum(['allow','deny']),nonce:id,expiresAt:z.number().int(),signature:z.string().min(80).max(120)}).strict().parse(req.body);prune();
   const link=store.get('d-link',p.sourceId),r=store.get('d-request',req.params.id);fail(r&&r.sourceId===p.sourceId,404,'Request not found');
   fail(online(link)&&link.allowRequests&&r.instance===link.instance&&r.id===link.requestId&&r.status==='pending'&&r.revision===b.revision&&r.expires>clock()&&b.expiresAt===Math.floor(r.expires/1000),409,'PC or request is no longer current');
   fail(digest(r.reviewText)===b.revision,409,'Request text changed');
@@ -91,5 +93,5 @@ export function mountDesktop(app,{store,adminKey,push,clock=Date.now}){
   const decisions=store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId&&r.status==='decided').map(r=>({id:r.id,nativeId:r.nativeId,revision:r.revision,...r.signed}));
   const state=await publish(s.id);res.json({connected:true,requests:store.all('d-request').filter(r=>r.sourceId===s.id&&r.instance===b.instance&&r.id===link.requestId).map(r=>({id:r.id,expiresAt:Math.floor(r.expires/1000),status:r.status})),decisions,phoneCount:store.all('d-phone').filter(p=>p.sourceId===s.id&&p.active).length,state});
  }));
- return {snapshot,prune};
+ return {snapshot,prune,mobile,online,publish};
 }

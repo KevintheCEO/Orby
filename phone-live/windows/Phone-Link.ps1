@@ -6,7 +6,14 @@ $script:phoneConfig=@{Enabled=$false;Approvals=$false;Origin='';Token='';Trusted
 try{$saved=[OrbyPhoneClient]::Load($script:phoneConfigPath);if($saved){$c=$saved|ConvertFrom-Json;$script:phoneConfig.Enabled=[bool]$c.Enabled;$script:phoneConfig.Approvals=[bool]$c.Approvals;$script:phoneConfig.Origin=[string]$c.Origin;$script:phoneConfig.Token=[string]$c.Token;foreach($p in $c.Trusted.PSObject.Properties){$script:phoneConfig.Trusted[$p.Name]=[string]$p.Value}}}catch{Write-OrbitLog 'Phone configuration could not be loaded; phone access remains off.'}
 if($NoNetwork){$script:phoneConfig.Enabled=$false}
 $script:phoneInstance=[guid]::NewGuid().ToString();$script:phoneSequence=0;$script:phoneConsumed=@{};$script:phoneAcks=@();$script:phoneLocalRequest=$null
-function Save-OrbyPhoneConfig {[OrbyPhoneClient]::Save($script:phoneConfigPath,($script:phoneConfig|ConvertTo-Json -Depth 6 -Compress))}
+$script:phoneNoNetwork=[bool]$NoNetwork
+$script:phoneConfigStamp=[IO.File]::GetLastWriteTimeUtc($script:phoneConfigPath)
+function Save-OrbyPhoneConfig {[OrbyPhoneClient]::Save($script:phoneConfigPath,($script:phoneConfig|ConvertTo-Json -Depth 6 -Compress));$script:phoneConfigStamp=[IO.File]::GetLastWriteTimeUtc($script:phoneConfigPath)}
+function Read-OrbyPhoneConfigChange {
+ if($script:phoneNoNetwork){return}
+ $stamp=[IO.File]::GetLastWriteTimeUtc($script:phoneConfigPath);if($stamp -eq $script:phoneConfigStamp){return}
+ try{$saved=[OrbyPhoneClient]::Load($script:phoneConfigPath);if(-not $saved){throw 'Missing phone config'};$c=$saved|ConvertFrom-Json;$trusted=@{};foreach($p in $c.Trusted.PSObject.Properties){$trusted[$p.Name]=[string]$p.Value};if($c.Enabled){$probe=[OrbyPhoneClient]::new([string]$c.Origin,[string]$c.Token,$false);$probe.Dispose()};$script:phoneConfig=@{Enabled=[bool]$c.Enabled;Approvals=[bool]$c.Approvals;Origin=[string]$c.Origin;Token=[string]$c.Token;Trusted=$trusted};$script:phoneConfigStamp=$stamp;Reset-OrbyPhoneClient;if($script:phoneWindow){$script:phoneUi.PhoneOrigin.Text=$script:phoneConfig.Origin;$script:phoneUi.PhoneEnabled.IsChecked=$script:phoneConfig.Enabled;$script:phoneUi.PhoneApprovals.IsChecked=$script:phoneConfig.Approvals;$script:phoneUi.PhoneQr.Source=$null;$script:phoneUi.PhoneInvitation.Text=''}}catch{$script:phoneConfig.Enabled=$false;Reset-OrbyPhoneClient;$script:phoneStatus='Phone setup could not be read. Open Phone access to reconnect.'}
+}
 function Reset-OrbyPhoneClient {if($script:phoneClient){$script:phoneClient.Dispose()};$script:phoneClient=$null;$script:phoneExchange=$null;$script:phoneInstance=[guid]::NewGuid().ToString();$script:phoneSequence=0;$script:phoneLocalRequest=$null;if($script:phoneConfig.Enabled){$script:phoneClient=[OrbyPhoneClient]::new($script:phoneConfig.Origin,$script:phoneConfig.Token,$false)}}
 function Get-OrbyPhoneTaskSnapshot {
  $result=@();foreach($id in @(Get-OrbyPairedProviders)){$status=Get-OrbyIndependentStatus $id;foreach($task in @(Get-OrbyProviderTasks $id $status)){
@@ -32,12 +39,14 @@ function Invoke-OrbyPhoneDecision($d){
  $now=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds();$key=$script:phoneConfig.Trusted[[string]$d.deviceId]
  $currentReview='ChatGPT'+"`n"+$q.Title+"`n`n"+$q.Detail
  if(-not $q.CanAnswer -or [OrbyPhoneClient]::Hash($currentReview) -cne $r.revision -or -not $key -or [long]$d.expiresAt -le $now -or [long]$d.expiresAt -gt ([DateTimeOffset]$script:phoneRequestStarted).ToUnixTimeSeconds()+135 -or ([datetime]::UtcNow-$script:phoneRequestStarted).TotalSeconds -ge 120 -or ([datetime]::UtcNow-$script:approvalRequestAt).TotalSeconds -ge 5){return}
- if(-not [OrbyPhoneClient]::Verify($key,[string]$d.deviceId,[string]$d.id,[string]$d.revision,[string]$d.decision,[string]$d.nonce,[long]$d.expiresAt,[string]$d.signature)){return}
+ $verified=if($d.method -eq 'webauthn'){[OrbyPhoneClient]::VerifyWeb($key,[string]$d.deviceId,[string]$d.id,[string]$d.revision,[string]$d.decision,[string]$d.nonce,[long]$d.expiresAt,[string]$d.signature,[string]$script:phoneConfig.Origin,[string]$d.clientDataJSON,[string]$d.authenticatorData)}else{[OrbyPhoneClient]::Verify($key,[string]$d.deviceId,[string]$d.id,[string]$d.revision,[string]$d.decision,[string]$d.nonce,[long]$d.expiresAt,[string]$d.signature)}
+ if(-not $verified){return}
  # Mark before invoking; network retries or another phone must never repeat a click.
  $script:phoneConsumed[$r.nativeId]=$true;$script:approvalClickedId=$q.Id;$script:approvalNotice='Sending the trusted phone response...'
  $script:approvalReplyTask=[OrbyApprovalWorker]::Respond($q.Id,($d.decision -eq 'allow'));$script:phoneSubmission=@{Id=$r.id;Task=$script:approvalReplyTask;Request=$r};Update-OrbyApprovalView
 }
 function Invoke-OrbyPhoneTick {
+ Read-OrbyPhoneConfigChange
  if($script:phoneSubmission -and $script:phoneSubmission.Task.IsCompleted){$result='uncertain';if(-not $script:phoneSubmission.Task.IsFaulted){$reply=$script:phoneSubmission.Task.Result;$result=if($reply.Resolved){'resolved'}elseif($reply.Submitted){'submitted'}else{'stale'}};$script:phoneAcks+=@{id=$script:phoneSubmission.Id;result=$result};$script:phoneSubmission=$null}
  if(-not $script:phoneConfig.Enabled){return}
  try{
@@ -52,11 +61,16 @@ function Start-OrbyPhoneUiRequest([string]$Method,[string]$Path,$Body,[string]$A
  if($script:phoneUiTask){return};if(-not $script:phoneClient){throw 'Save and enable the relay connection first.'}
  $script:phoneUiTask=$script:phoneClient.Request($Method,$Path,$(if($null -ne $Body){$Body|ConvertTo-Json -Compress}else{$null}));$script:phoneUiAction=$Action;$script:phoneUi.PhoneMessage.Text='Connecting...'
 }
+function Set-OrbyPhoneInvitation($Reply){
+ $script:phoneUi.PhoneInvitation.Text=$Reply.invite;$script:phoneUi.PhoneQr.Source=$null;$script:phoneUi.PhoneQr.Visibility='Collapsed'
+ if($Reply.qr -and ([string]$Reply.qr).StartsWith('data:image/png;base64,') -and $Reply.qr.Length -lt 150000){$bytes=[Convert]::FromBase64String($Reply.qr.Substring(22));$stream=[IO.MemoryStream]::new($bytes);try{$image=[Windows.Media.Imaging.BitmapImage]::new();$image.BeginInit();$image.CacheOption='OnLoad';$image.DecodePixelWidth=280;$image.StreamSource=$stream;$image.EndInit();$image.Freeze();$script:phoneUi.PhoneQr.Source=$image;$script:phoneUi.PhoneQr.Visibility='Visible'}finally{$stream.Dispose()}}
+ $script:phoneUi.PhoneMessage.Text='Scan with your iPhone camera, connect with a passkey, then compare the fingerprint. Invitation expires in five minutes.'
+}
 function Update-OrbyPhoneUiTask {
  if(-not $script:phoneUiTask -or -not $script:phoneUiTask.IsCompleted){return};$t=$script:phoneUiTask;$script:phoneUiTask=$null
  try{if($t.IsFaulted){throw 'Connection failed; check the relay address and PC code.'};$r=$t.Result|ConvertFrom-Json
   switch($script:phoneUiAction){
-   invite {$script:phoneUi.PhoneInvitation.Text=$r.invite;$script:phoneUi.PhoneMessage.Text='Paste this invitation into the phone app within five minutes.'}
+   invite {Set-OrbyPhoneInvitation $r}
    phones {$script:phoneUi.PhoneDevices.Children.Clear();foreach($p in $r.phones){$row=[Windows.Controls.StackPanel]::new();$row.Margin='0,0,0,12';$label=[Windows.Controls.TextBlock]::new();$label.Text=$p.name+' · '+$p.fingerprint+$(if($p.active){' · connected'}else{' · awaiting PC confirmation'});[void]$row.Children.Add($label);$actions=[Windows.Controls.StackPanel]::new();$actions.Orientation='Horizontal'
     $trust=[Windows.Controls.Button]::new();$trust.Content='Fingerprints match — trust phone';$trust.IsEnabled=(-not $p.active -or $script:phoneConfig.Trusted[$p.id] -cne $p.publicKey);$trust.Tag=$p;$trust.Add_Click({param($sender,$e)$p=$sender.Tag;if([OrbyPhoneClient]::Fingerprint($p.publicKey) -cne $p.fingerprint){throw 'Phone fingerprint mismatch'};$script:phoneConfig.Trusted[$p.id]=$p.publicKey;Save-OrbyPhoneConfig;Start-OrbyPhoneUiRequest 'POST' ('/desktop/phones/'+$p.id+'/trust') @{fingerprint=$p.fingerprint} 'trusted'});[void]$actions.Children.Add($trust)
     $revoke=[Windows.Controls.Button]::new();$revoke.Content='Revoke';$revoke.Tag=$p.id;$revoke.Add_Click({param($sender,$e)$id=[string]$sender.Tag;$script:phoneConfig.Trusted.Remove($id);Save-OrbyPhoneConfig;Start-OrbyPhoneUiRequest 'DELETE' ('/desktop/phones/'+$id) $null 'revoked'});[void]$actions.Children.Add($revoke);[void]$row.Children.Add($actions);[void]$script:phoneUi.PhoneDevices.Children.Add($row)}}

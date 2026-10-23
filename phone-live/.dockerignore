@@ -4,3 +4,5 @@
 !package-lock.json
 !relay/
 !relay/**
+!web/
+!web/**

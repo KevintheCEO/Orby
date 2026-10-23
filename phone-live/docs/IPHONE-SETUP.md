@@ -1,32 +1,40 @@
-# iPhone setup comes first
+# Connect your iPhone for free
 
-You only need the iPhone version. Ignore the Android APK and Android test instructions.
+This is the foreground Safari / Home Screen version you chose. No Apple membership purchase, TestFlight installation, Android phone or Work chat is needed. It shows the computer's readable ChatGPT, Claude and Gemini task activity. A trusted phone can review and passkey-sign one supported ChatGPT/Codex permission at a time.
 
-## Build and installation are different steps
+**Keep the phone screen open to see updates. This free version has no background Live Activity, Lock Screen feed or phone notifications.** The native iPhone build is separate and deferred.
 
-The native app and its Live Activity extension are in `ios/`. GitHub's standard Mac runner can compile this project from a Windows computer, so you do not need to own a Mac for that check. The workflow compiles both the simulator and the unsigned device target. It produces diagnostics, not an installable signed IPA.
+## Pair once
 
-Signing in to developer.apple.com and accepting the developer agreement registers a free developer account. It does not itself enroll you in the paid Apple Developer Program. Apple documents free personal-device testing using Xcode on a Mac; TestFlight distribution is a membership benefit. Remote Live Activity updates use APNs and the app's Push Notifications capability.
+1. On Windows, use Orby 10.43. Double-click `Start-PhoneAccess.cmd` in this folder. Wait for “Phone relay ready.” Orby reloads the connection automatically; an older Orby version must be restarted. The helpers stay running in the background.
+2. Open **Orby → Settings → Phone access → Create invitation / QR code**.
+3. Scan that QR code with your iPhone Camera and open the link in **Safari**. The invitation is filled in automatically and expires after five minutes. Do not share it.
+4. Give the phone a name and tap **Connect with passkey**. Complete the iPhone's passkey confirmation. Use a current iOS/Safari version and enable a screen lock and passkeys. The signing key stays in the passkey provider; Orby does not receive your Face ID, passcode or Apple password.
+5. The phone shows a fingerprint and waits. On Windows, click **Refresh phones**, compare the complete fingerprint, then click **Fingerprints match — trust phone**. Until this confirmation, no task details are shared.
+6. Keep Safari open. Start a task on the PC and check that its provider, title and readable activity appear. Try ChatGPT, Claude and Gemini separately. Orby can only show context the connected desktop app exposes.
 
-Apple sources:
+For an app-style window, use Safari's **Share → Add to Home Screen before pairing**, open that icon, then paste a fresh invitation from Windows. Safari and the Home Screen window can use separate storage, so pairing in one does not guarantee the other is connected. Scan-to-Safari is the simplest first test.
 
-- [Developer account and free personal testing](https://developer.apple.com/help/account/basics/about-your-developer-account)
-- [Program membership and TestFlight](https://developer.apple.com/programs/)
-- [Live Activity push requirements](https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications)
+## Test a supported approval
 
-## What you should do now
+Task viewing works with permission answering off. To test answering, first enable **Let trusted phones answer supported requests** in Windows Phone access and **Save connection**.
 
-Stay signed in at [Apple Developer account](https://developer.apple.com/account/). Check whether the page offers **Join / Enroll**, or shows an active Apple Developer Program membership and Team ID. Do not purchase a membership or create signing keys until the source compile check has passed and you choose the installation route. Never send your Apple password, verification code, certificate password or private key in chat.
+Use a harmless, deliberately approval-gated task in a disposable ChatGPT/Codex project. Keep its actual permission card available on the PC. On your phone, open **Review exact request**, read the complete action, check **I have read the complete action**, then tap **Allow once** or **Deny**. Confirm the passkey prompt. Each signature binds that one choice to the exact request and expires with it.
 
-After the source compiles, a TestFlight build needs:
+The phone shows recorded / waiting for PC, then the Windows acknowledgement. “Submitted” or “resolved” confirms handling of the permission card, not successful completion of the tool action. Changed prompts, requests older than two minutes, sleeping PCs, revoked phones and repeated responses must fail closed. Do not weaken the desktop AI's approval policy to force a test.
 
-1. An active developer team and your app record in App Store Connect.
-2. Registered app and widget identifiers, with app Push Notifications enabled.
-3. The app's distribution certificate and matching app/widget provisioning profiles, kept in private build secrets.
-4. A signed archive uploaded to your App Store Connect account and processed for TestFlight.
-5. An APNs key configured privately on your relay, with matching team and app identifiers.
-6. Installation on your iPhone, pairing with desktop Orby, and a real Lock Screen / background delivery test.
+Remote answering currently supports one unambiguous, accessible **ChatGPT/Codex Allow once / Deny** card. Arbitrary Claude/Gemini approvals and general questions remain on the PC. Their readable task activity is still shown.
 
-No Apple account resources are created automatically. No membership purchase is made. An unsigned compilation does not prove signing, installation, Face ID, APNs delivery or physical-device behavior.
+## Away from home
 
-Once installed, open Orby Live, paste the relay address and a five-minute invitation from Windows Orby's **Settings → Phone access**. Compare the full phone fingerprint on both screens, then trust the phone on the PC. Start the Live Activity in the phone app. Review a request in the app and confirm with the screen lock before it is signed. Task viewing covers the three providers' readable contexts; remote answering currently covers supported ChatGPT/Codex permission cards only.
+After pairing, switch the iPhone to mobile data and check that the same task feed refreshes. The Windows PC, relay and tunnel must stay awake and online. This is not an always-on hosted service.
+
+The temporary HTTPS address changes when the helpers restart. Run `Stop-PhoneAccess.cmd`, then `Start-PhoneAccess.cmd` for a fresh session. Create a new invitation and pair again; passkeys are bound to the old hostname. Revoke old entries in Windows so they do not fill the four-phone limit. Orby 10.43 reloads the new address automatically. A stable domain and host can remove this step later.
+
+To stop sharing, disable **Enable phone access** and save, revoke the phone in Windows, or choose **Disconnect this phone** in Safari. Disconnection cannot undo an action already accepted. Task records are encrypted at rest and transported over HTTPS; the relay host can read task text, so this is not end-to-end encryption.
+
+## What has actually been tested
+
+Local tests exercise registration, exact origin, passkey user verification, signature binding, pending-phone isolation, all three task providers, expired/stale requests, revocation and PC acknowledgement. An isolated Chrome browser with a virtual platform authenticator completed the real browser registration/review/sign/ack flow. This is **not proof of physical iPhone Safari or Face ID behavior**; that is the next user-device test.
+
+The separate native iPhone app and Live Activity extension compiled successfully for both simulator and unsigned device in [the Mac build check](https://github.com/kevinenas/Orby/actions/runs/39993496758). No signed IPA, phone installation or APNs delivery was produced. Native background Live Activities remain deferred under your free-version choice.

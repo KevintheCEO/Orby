@@ -37,12 +37,29 @@ public sealed class OrbyPhoneClient : IDisposable {
   for(int half=0;half<2;half++){if(d[p++]!=2)throw new InvalidDataException();int length=d[p++];if(length<1||length>33||p+length>d.Length)throw new InvalidDataException();if(length==33){if(d[p++]!=0)throw new InvalidDataException();length--;}Buffer.BlockCopy(d,p,result,half*32+32-length,length);p+=length;}
   if(p!=d.Length)throw new InvalidDataException();return result;
  }
+ static bool VerifyBytes(string key,byte[] message,string signature){
+  byte[] raw=Convert.FromBase64String(key);if(raw.Length!=65||raw[0]!=4)return false;var blob=new byte[72];blob[0]=0x45;blob[1]=0x43;blob[2]=0x53;blob[3]=0x31;blob[4]=32;Buffer.BlockCopy(raw,1,blob,8,64);
+  using(var cng=CngKey.Import(blob,CngKeyBlobFormat.EccPublicBlob))using(var ec=new ECDsaCng(cng)){ec.HashAlgorithm=CngAlgorithm.Sha256;return ec.VerifyData(message,Signature(signature));}
+ }
+ static byte[] UrlBytes(string value){if(value.Length>12000)throw new InvalidDataException();string s=value.Replace('-','+').Replace('_','/');return Convert.FromBase64String(s.PadRight(s.Length+(4-s.Length%4)%4,'='));}
+ static bool Fields(string deviceId,string requestId,string revision,string decision,string nonce){Guid parsed;return Guid.TryParse(deviceId,out parsed)&&Guid.TryParse(requestId,out parsed)&&Guid.TryParse(nonce,out parsed)&&System.Text.RegularExpressions.Regex.IsMatch(revision,"^[a-f0-9]{64}$")&&(decision=="allow"||decision=="deny");}
+ static string Decision(string deviceId,string requestId,string revision,string decision,string nonce,long expiresAt){return "OrbyPhone.v1\n"+deviceId+"\n"+requestId+"\n"+revision+"\n"+decision+"\n"+nonce+"\n"+expiresAt;}
  public static bool Verify(string key,string deviceId,string requestId,string revision,string decision,string nonce,long expiresAt,string signature){
   try{
-   Guid parsed;if(!Guid.TryParse(deviceId,out parsed)||!Guid.TryParse(requestId,out parsed)||!Guid.TryParse(nonce,out parsed)||revision.Length!=64||(decision!="allow"&&decision!="deny"))return false;
-   byte[] raw=Convert.FromBase64String(key);if(raw.Length!=65||raw[0]!=4)return false;var blob=new byte[72];blob[0]=0x45;blob[1]=0x43;blob[2]=0x53;blob[3]=0x31;blob[4]=32;Buffer.BlockCopy(raw,1,blob,8,64);
-   using(var cng=CngKey.Import(blob,CngKeyBlobFormat.EccPublicBlob))using(var ec=new ECDsaCng(cng)){ec.HashAlgorithm=CngAlgorithm.Sha256;
-    string text="OrbyPhone.v1\n"+deviceId+"\n"+requestId+"\n"+revision+"\n"+decision+"\n"+nonce+"\n"+expiresAt;return ec.VerifyData(Encoding.UTF8.GetBytes(text),Signature(signature));
+   return Fields(deviceId,requestId,revision,decision,nonce)&&VerifyBytes(key,Encoding.UTF8.GetBytes(Decision(deviceId,requestId,revision,decision,nonce,expiresAt)),signature);
+  }catch{return false;}
+ }
+ public static bool VerifyWeb(string key,string deviceId,string requestId,string revision,string decision,string nonce,long expiresAt,string signature,string address,string clientDataJSON,string authenticatorData){
+  try{
+   if(!Fields(deviceId,requestId,revision,decision,nonce))return false;
+   var origin=new Uri(address);if(origin.Scheme!="https"||origin.AbsolutePath!="/"||origin.UserInfo!=""||origin.Query!=""||origin.Fragment!="")return false;
+   byte[] client=UrlBytes(clientDataJSON),auth=UrlBytes(authenticatorData);if(client.Length>4096||auth.Length<37||auth.Length>4096||(auth[32]&5)!=5)return false;
+   var data=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(Encoding.UTF8.GetString(client));
+   if((string)data["type"]!="webauthn.get"||(string)data["origin"]!=origin.GetLeftPart(UriPartial.Authority)||(data.ContainsKey("crossOrigin")&&!(data["crossOrigin"] is bool&&!(bool)data["crossOrigin"])))return false;
+   using(var sha=SHA256.Create()){
+    string challenge=Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(Decision(deviceId,requestId,revision,decision,nonce,expiresAt)))).TrimEnd('=').Replace('+','-').Replace('/','_');if((string)data["challenge"]!=challenge)return false;
+    byte[] rp=sha.ComputeHash(Encoding.UTF8.GetBytes(origin.DnsSafeHost.ToLowerInvariant()));int mismatch=0;for(int i=0;i<32;i++)mismatch|=rp[i]^auth[i];if(mismatch!=0)return false;
+    byte[] hashed=sha.ComputeHash(client),message=new byte[auth.Length+hashed.Length];Buffer.BlockCopy(auth,0,message,0,auth.Length);Buffer.BlockCopy(hashed,0,message,auth.Length,hashed.Length);return VerifyBytes(key,message,signature);
    }
   }catch{return false;}
  }

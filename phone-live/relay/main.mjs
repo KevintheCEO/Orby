@@ -12,7 +12,7 @@ function secret(name,generate){const p=resolve(dir,name);if(!existsSync(p))write
 const origin=safeOrigin(process.env.PUBLIC_ORIGIN||'http://127.0.0.1:4319',{development:process.env.NODE_ENV!=='production'});
 const admin=process.env.ADMIN_TOKEN||secret('admin.key',token),key=Buffer.from(process.env.STORAGE_KEY||secret('storage.key',()=>randomBytes(32).toString('hex')),'hex');
 const push=new ApplePush({key:process.env.APNS_KEY_PATH?readFileSync(process.env.APNS_KEY_PATH,'utf8'):null,keyId:process.env.APNS_KEY_ID,teamId:process.env.APPLE_TEAM_ID,bundleId:process.env.APP_BUNDLE_ID,production:process.env.APNS_ENV==='production'});
-const store=new Store(resolve(dir,'live.sqlite'),key),{app,prune}=createApp({store,adminKey:admin,push});
+const store=new Store(resolve(dir,'live.sqlite'),key),{app,prune}=createApp({store,adminKey:admin,push,browserOrigin:origin});
 const bind=process.env.BIND_ADDRESS||'127.0.0.1';if(!['127.0.0.1','0.0.0.0'].includes(bind))throw new Error('Invalid bind address');
 const server=app.listen(Number(process.env.PORT||4319),bind,()=>console.log(`Orby Live relay: ${origin}\nApple push: ${push.configured?'configured; delivery still needs device testing':'not configured; iPhone background delivery unavailable'}\nDesktop linking is opt-in. The withdrawn MCP connector is not used.`));
 const timer=setInterval(prune,60000);timer.unref();
