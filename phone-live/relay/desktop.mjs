@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { randomUUID, createPublicKey, verify } from 'node:crypto';
+import { randomUUID, createPublicKey, verify, createHash } from 'node:crypto';
 import { digest, token, fail } from './security.mjs';
 import QRCode from 'qrcode';
 
@@ -9,7 +9,7 @@ const task=z.object({id:z.string().min(1).max(240),provider,state:z.enum(['worki
 const request=z.object({id,nativeId:z.string().min(1).max(200),provider:z.literal('ChatGPT'),reviewText:z.string().min(1).max(8000),revision:hash}).strict();
 const ack=z.object({id,result:z.enum(['submitted','resolved','stale','uncertain'])}).strict();
 const sync=z.object({instance:id,sequence:z.number().int().nonnegative(),tasks:z.array(task).max(64),request:request.nullable(),allowRequests:z.boolean(),acks:z.array(ack).max(16)}).strict();
-export const fingerprint=key=>digest(Buffer.from(key,'base64')).slice(0,12).toUpperCase();
+export const fingerprint=key=>createHash('sha256').update(Buffer.from(key,'base64')).digest('hex').slice(0,12).toUpperCase();
 export function phoneKey(raw){
  const key=Buffer.from(raw,'base64');fail(key.length===65&&key[0]===4,400,'Invalid phone signing key');
  try{return createPublicKey({key:{kty:'EC',crv:'P-256',x:key.subarray(1,33).toString('base64url'),y:key.subarray(33).toString('base64url')},format:'jwk'});}catch{fail(false,400,'Invalid phone signing key');}

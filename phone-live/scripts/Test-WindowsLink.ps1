@@ -8,6 +8,7 @@ public static class OrbyApprovalWorker {public static int Calls; public static T
 '@
 $f=Get-Content -LiteralPath $Fixture -Raw|ConvertFrom-Json
 function Assert($condition,[string]$reason){if(-not $condition){throw $reason};$script:count++}
+Assert ([OrbyPhoneClient]::Fingerprint($f.key) -ceq $f.fingerprint) 'Relay fingerprint differs from Windows raw-key fingerprint'
 $argsVerify=@($f.key,$f.deviceId,$f.requestId,$f.revision,'allow',$f.nonce,[long]$f.expiresAt,$f.signature)
 Assert ([OrbyPhoneClient]::Verify.Invoke($argsVerify)) 'Node to Windows P256 signature did not verify'
 $webSignature=[Convert]::ToBase64String([Convert]::FromBase64String($f.web.signature.Replace('-','+').Replace('_','/').PadRight($f.web.signature.Length+(4-$f.web.signature.Length%4)%4,'=')))
