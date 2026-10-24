@@ -11,3 +11,7 @@ The record lives in its own encrypted `d-phone-test` namespace and separate `/we
 Notifications require the current Home Screen app's own subscription, explicit iPhone permission and the same relay origin. An old temporary address's subscription is not reused at a new origin. The test can intentionally alert while the PC is active; ordinary activity/permission notification rules remain unchanged. The notification contains a generic test message and a test ID. Tapping only opens the poll; it never submits the choice. If the app is already open, the poll also appears on Home.
 
 Reload the Home Screen app once after installing the feature so its notification worker and review UI are current. Then lock the iPhone if testing a Lock Screen banner, tap the notification, review the poll, choose one option, acknowledge no action will run, and confirm Send test answer with the passkey. Delivery acceptance by the push service is not proof of physical iPhone display or a successful response.
+
+## Observed result · 24 October 2026
+
+The user’s signed “Allow once — test only” choice reached Windows, passed independent verification against the DPAPI-pinned phone public key, and was acknowledged as verified. The push service accepted the notification. No action executed and no normal handoff setting changed. This establishes the direct poll response path; it does not prove every option on a physical device or independently observe the Lock Screen banner.
