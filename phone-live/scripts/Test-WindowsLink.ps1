@@ -4,7 +4,7 @@ Add-Type -Path (Join-Path $SourceRoot 'Phone-Link.cs') -ReferencedAssemblies Sys
 Add-Type -TypeDefinition @'
 using System.Threading.Tasks;
 public class PhoneTestReply {public bool Resolved=true;public bool Submitted=true;}
-public static class OrbyApprovalWorker {public static int Calls;public static string LastStop="";public static Task<PhoneTestReply> Stop(string id,string project){Calls++;LastStop=project;return Task.FromResult(new PhoneTestReply());}public static int LastChoice=-1;public static string LastReply="";public static Task<PhoneTestReply> Answer(string id,int choice){Calls++;LastChoice=choice;return Task.FromResult(new PhoneTestReply());}public static Task<PhoneTestReply> Reply(string id,string text){Calls++;LastReply=text;return Task.FromResult(new PhoneTestReply());} public static Task<PhoneTestReply> Respond(string id,bool allow){Calls++;return Task.FromResult(new PhoneTestReply());}}
+public static class OrbyApprovalWorker {public static int Calls;public static string LastStop="";public static Task<PhoneTestReply> Stop(string id,string project){Calls++;LastStop=project;return Task.FromResult(new PhoneTestReply());}public static string LastAnswerId="";public static int LastChoice=-1;public static string LastReply="";public static Task<PhoneTestReply> Answer(string id,int choice){Calls++;LastAnswerId=id;LastChoice=choice;return Task.FromResult(new PhoneTestReply());}public static Task<PhoneTestReply> Reply(string id,string text){Calls++;LastReply=text;return Task.FromResult(new PhoneTestReply());} public static Task<PhoneTestReply> Respond(string id,bool allow){Calls++;return Task.FromResult(new PhoneTestReply());}}
 '@
 $f=Get-Content -LiteralPath $Fixture -Raw|ConvertFrom-Json
 function Assert($condition,[string]$reason){if(-not $condition){throw $reason};$script:count++}
@@ -27,7 +27,9 @@ $rejected=$false;try{$client=[OrbyPhoneClient]::new('http://example.com','x'*43,
 $rejected=$false;try{$client=[OrbyPhoneClient]::new('https://example.com/path','x'*43,$false)}catch{$rejected=$true};Assert $rejected 'Non-root relay address accepted'
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $SourceRoot 'Phone-Link.ps1'),[ref]$tokens,[ref]$errors)
 Assert ($errors.Count -eq 0) 'Windows phone module did not parse'
-foreach($name in @('Get-OrbyPhoneReviewText','Test-OrbyPhoneHandoff','Get-OrbyPhoneActiveTaskToken','Get-OrbyPhoneStopRequest','Get-OrbyPhoneRequest','Invoke-OrbyPhoneDecision','Invoke-OrbyPhoneTick','Read-OrbyPhoneConfigChange')){$node=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object Name -eq $name|Select-Object -First 1;. ([scriptblock]::Create($node.Extent.Text))}
+foreach($name in @('Get-OrbyPhoneReviewText','Test-OrbyPhoneHandoff','Test-OrbyPhoneHandoffDelivered','Get-OrbyPhoneReviewWaiting','Confirm-OrbyPhoneHandoffResponse','Write-OrbyPhoneHandoffStatus','Get-OrbyPhoneRequestBinding','Get-OrbyPhoneActiveTaskToken','Get-OrbyPhoneStopRequest','Get-OrbyPhoneRequest','Invoke-OrbyPhoneDecision','Invoke-OrbyPhoneTick','Read-OrbyPhoneConfigChange')){$node=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object Name -eq $name|Select-Object -First 1;. ([scriptblock]::Create($node.Extent.Text))}
+$clockAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $SourceRoot 'Approval-Bridge.ps1'),[ref]$tokens,[ref]$errors)
+$clockNode=$clockAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|Where-Object Name -eq 'Get-OrbyApprovalClockKey'|Select-Object -First 1;. ([scriptblock]::Create($clockNode.Extent.Text))
 $script:phoneNoNetwork=$true
 function Update-OrbyApprovalView {}
 $script:phoneConfig=@{Enabled=$true;Approvals=$true;Trusted=@{}};$script:phoneConfig.Trusted[$f.deviceId]=$f.key
@@ -52,13 +54,27 @@ $script:approvalReplyTask=$null;$script:phoneSubmission=$null;$script:phoneConsu
 $script:approvalRequest=[pscustomobject]@{Available=$true;CanAnswer=$true;CanReply=$true;Kind='question';Id='native-question';Title='Question fixture';Detail='Choose an answer or write your response, then send it.';Choices=@('First','Second')}
 $script:phoneConnectedAt=[datetime]::UtcNow;$script:phoneReadyCount=1;$script:approvalRequestAt=[datetime]::UtcNow;$script:approvalFirstSeen=[datetime]::UtcNow.AddSeconds(-299)
 Assert (-not (Get-OrbyPhoneRequest)) 'Question handed off before five minutes'
+$script:approvalRequest|Add-Member NoteProperty Target 'fixture-window';$script:orbyActiveTasks=@();$script:approvalClockEpisode='native-question';$script:approvalClockKey=Get-OrbyApprovalClockKey $script:approvalRequest
 $script:approvalFirstSeen=[datetime]::UtcNow.AddSeconds(-301);$hand=Get-OrbyPhoneRequest
 Assert ($hand.kind -eq 'question' -and $hand.handoff -and $hand.choices.Count -eq 2 -and $hand.reviewText -ceq $f.questionReview) 'Question handoff lost its exact choices'
+Assert (-not (Test-OrbyPhoneHandoffDelivered)) 'PC question hid before the relay accepted it'
+Confirm-OrbyPhoneHandoffResponse ([pscustomobject]@{requests=@([pscustomobject]@{id=$hand.id;status='pending'})})
+Assert (Test-OrbyPhoneHandoffDelivered) 'Relay acceptance did not complete the visible handoff'
+$script:phoneHandoffAckRevision='changed';Assert (-not (Test-OrbyPhoneHandoffDelivered)) 'Changed review inherited the prior handoff acknowledgement'
+$script:phoneHandoffAckRevision=$hand.revision
+Assert (Get-OrbyPhoneReviewWaiting) 'Pending PC question was not marked as waiting'
+
 $script:phoneLocalRequest.id=$f.questionId;$script:phoneRequestStarted=[datetime]::UtcNow
 function QuestionDecision($b){$signature=$b.proof.signature.Replace('-','+').Replace('_','/');[pscustomobject]@{id=$f.questionId;nativeId='native-question';revision=$f.questionRevision;deviceId=$f.deviceId;decision=$b.decision;answer=$b.answer;nonce=$b.nonce;expiresAt=$b.expiresAt;method='webauthn';signature=[Convert]::ToBase64String([Convert]::FromBase64String($signature.PadRight($signature.Length+(4-$signature.Length%4)%4,'=')));clientDataJSON=$b.proof.clientDataJSON;authenticatorData=$b.proof.authenticatorData}}
 $qdecision=QuestionDecision $f.questionChoice
+$script:approvalRequest.Target='another-window';Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 2) 'A matching prompt in another window accepted an old phone review';$script:approvalRequest.Target='fixture-window'
+$script:orbyActiveTasks=@([pscustomobject]@{Id='other-task';Turn='new-turn';Provider='chatgpt'});Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 2) 'A newer journal turn accepted an old phone review';$script:orbyActiveTasks=@()
+$stableId=$script:phoneLocalRequest.id;$script:approvalRequest.Id='remounted-native-question'
+Assert ((Get-OrbyPhoneRequest).id -ceq $stableId) 'An unchanged question remount replaced the phone review'
+
 $script:approvalRequest.Choices[1]='Changed choice';Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 2) 'Changed choice list accepted an old phone response'
 $script:approvalRequest.Choices[1]='Second';Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 3 -and [OrbyApprovalWorker]::LastChoice -eq 1) 'Exact phone choice did not reach native Answer'
+Assert ([OrbyApprovalWorker]::LastAnswerId -ceq 'remounted-native-question') 'Phone answer used a stale accessibility control identity'
 $script:approvalReplyTask=$null;$script:phoneSubmission=$null;$script:phoneConsumed=@{};$qdecision=QuestionDecision $f.questionReply;$qdecision.answer='Changed after signing'
 Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 3) 'Changed dictated response was accepted'
 $qdecision.answer=$f.questionAnswer;Invoke-OrbyPhoneDecision $qdecision;Assert ([OrbyApprovalWorker]::Calls -eq 4 -and [OrbyApprovalWorker]::LastReply -ceq $f.questionAnswer) 'Exact dictated response did not reach native Reply'
@@ -86,4 +102,13 @@ $script:phoneConfigPath=Join-Path (Split-Path $Fixture) 'reload.dpapi';$script:p
 $before=$script:phoneConfig.Origin;Read-OrbyPhoneConfigChange;Assert ($script:phoneConfig.Origin -ceq $before) 'No-network mode reloaded connection config'
 $script:phoneNoNetwork=$false;Read-OrbyPhoneConfigChange;Assert ($script:phoneConfig.Origin -ceq 'https://fresh.example.test') 'Updated connection address was not reloaded'
 [IO.File]::WriteAllText($script:phoneConfigPath,'not-protected');[IO.File]::SetLastWriteTimeUtc($script:phoneConfigPath,[datetime]::UtcNow.AddSeconds(1));Read-OrbyPhoneConfigChange;Assert (-not $script:phoneConfig.Enabled) 'Corrupt connection config did not fail closed'
+# Local troubleshooting output must explain a blocked handoff without copying request content.
+$script:logDir=Split-Path $Fixture;$script:phoneDiagnosticAt=$null
+$script:phoneConfig=@{Enabled=$true;Approvals=$true;Trusted=@{fixture='key'}}
+$script:phoneReadyCount=1;$script:phoneConnectedAt=[datetime]::UtcNow
+$script:approvalRequest=[pscustomobject]@{Available=$false;CanAnswer=$false;Kind='question';Status='Permission controls are not exposed by this window';Title='PRIVATE-PROMPT-SENTINEL';Detail='PRIVATE-ANSWER-SENTINEL'}
+Write-OrbyPhoneHandoffStatus
+$diagnostic=Get-Content -LiteralPath (Join-Path $script:logDir 'phone-handoff-status.json') -Raw
+Assert (($diagnostic|ConvertFrom-Json).reason -ceq 'waiting-for-accessible-question') 'Blocked handoff diagnostic lost its reason'
+Assert ($diagnostic -notmatch 'PRIVATE-(PROMPT|ANSWER)-SENTINEL') 'Handoff diagnostic copied private request content'
 "PASS: $script:count Windows checks: signature interoperability, protected credentials, exact prompt binding, replay, expiry/freshness, acknowledgement batching and disabled connection. No real permission was clicked."

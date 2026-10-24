@@ -9,7 +9,7 @@ const provider=z.enum(['ChatGPT','Claude','Gemini']);
 const task=z.object({id:z.string().min(1).max(240),provider,state:z.enum(['working','attention','idle','error']),title:z.string().max(240),detail:z.string().max(600)}).strict();
 const request=z.object({id,nativeId:z.string().min(1).max(200),provider:z.literal('ChatGPT'),reviewText:z.string().min(1).max(8000),revision:hash,kind:z.enum(['permission','question','stop']).default('permission'),choices:z.array(z.string().min(1).max(500)).max(8).default([]),canReply:z.boolean().default(false),handoff:z.boolean().default(false)}).strict();
 const ack=z.object({id,result:z.enum(['submitted','resolved','stale','uncertain'])}).strict();
-const sync=z.object({instance:id,sequence:z.number().int().nonnegative(),tasks:z.array(task).max(64),request:request.nullable(),allowRequests:z.boolean(),acks:z.array(ack).max(16),presence:z.object({away:z.boolean(),idleSeconds:z.number().int().min(0).max(4294967)}).strict().optional()}).strict();
+const sync=z.object({instance:id,sequence:z.number().int().nonnegative(),tasks:z.array(task).max(64),request:request.nullable(),allowRequests:z.boolean(),reviewWaiting:z.boolean().optional(),acks:z.array(ack).max(16),presence:z.object({away:z.boolean(),idleSeconds:z.number().int().min(0).max(4294967)}).strict().optional()}).strict();
 export const fingerprint=key=>createHash('sha256').update(Buffer.from(key,'base64')).digest('hex').slice(0,12).toUpperCase();
 export function phoneKey(raw){
  const key=Buffer.from(raw,'base64');fail(key.length===65&&key[0]===4,400,'Invalid phone signing key');

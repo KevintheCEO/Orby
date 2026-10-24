@@ -14,7 +14,7 @@ async function fixture(run){
  const delivery=new WebPushDelivery({store,origin,clock:()=>now,send:(...a)=>sender(...a)}),server=createApp({store,adminKey:admin,browserOrigin:origin,webPush:delivery,clock:()=>now,push:{configured:false,async send(){return {};}}}).app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
  async function call(path,token,body,method=body?'POST':'GET'){const r=await fetch(base+path,{method,headers:{...(path.startsWith('/web/')?{Origin:origin}:{}),...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});return {status:r.status,body:await r.json()};}
  const source=(await call('/admin/desktop',admin,{name:'Fixture PC'})).body,instance=randomUUID();await call('/desktop/session',source.token,{instance});
- const sync=(request=null,away=false,tasks=[])=>call('/desktop/sync',source.token,{instance,sequence:++sequence,tasks,request,allowRequests:true,acks:[],presence:{away,idleSeconds:away?100:0}});await sync();
+ const sync=(request=null,away=false,tasks=[],reviewWaiting=false)=>call('/desktop/sync',source.token,{instance,sequence:++sequence,tasks,request,allowRequests:true,reviewWaiting,acks:[],presence:{away,idleSeconds:away?100:0}});await sync();
  const key=authenticator(),invite=(await call('/desktop/invite',source.token,{})).body,start=(await call('/web/pair/options',null,{invite:invite.invite,name:'Test phone'})).body,phone=(await call('/web/pair/verify',null,{id:start.id,response:registration(key,start.options,origin)})).body;
  await call('/desktop/phones/'+phone.deviceId+'/trust',source.token,{fingerprint:phone.fingerprint});
  const subscription={endpoint:'https://web.push.apple.com/synthetic-test',expirationTime:null,keys:{p256dh:Buffer.from(key.raw,'base64').toString('base64url'),auth:randomBytes(16).toString('base64url')}};
@@ -69,3 +69,14 @@ test('service worker always shows a visible alert and a tap only opens the exact
  const id=randomUUID();events.push({data:{json:()=>({kind:'request',requestId:id,expiresAt:Date.now()/1000+60,notification:{title:'Review request',body:'Open Orby'}})},waitUntil:p=>pending.push(p)});await Promise.all(pending);
  assert.equal(shown.length,1);events.notificationclick({notification:{data:{requestId:id},close(){}},waitUntil:p=>pending.push(p)});await Promise.all(pending);assert.equal(opened[0],'https://phone.example.test/iphone/home.html#request='+id);assert.equal(calls,0);
 });
+
+
+test('PC question countdown suppresses premature activity alerts and only its handoff sends an actionable notification',()=>fixture(async f=>{
+ await f.subscribe();const tasks=[{id:'question-task',provider:'ChatGPT',state:'working',title:'Private question context',detail:'Waiting'}];
+ await f.sync(null,true,tasks,true);await f.flush();assert.equal(f.sent.length,0);
+ const state=(await f.call('/web/state',f.phone.token)).body;assert.equal(state.summary.reviewWaiting,true);assert.equal(state.requests.length,0);
+ f.advance(301000);const r=f.request();await f.sync(r,true,tasks,true);await f.flush();assert.equal(f.sent.length,1);assert.equal(f.sent[0].payload.kind,'request');assert.equal(f.sent[0].payload.requestId,r.id);
+}));
+test('attention without an actionable phone question never masquerades as a project-running alert',()=>fixture(async f=>{
+ await f.subscribe();await f.sync(null,true,[{id:'attention-task',provider:'ChatGPT',state:'attention',title:'Question',detail:'Waiting for input'}]);await f.flush();assert.equal(f.sent.length,0);
+}));

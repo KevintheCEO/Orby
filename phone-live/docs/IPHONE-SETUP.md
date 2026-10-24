@@ -1,6 +1,6 @@
 # Orby on your iPhone — free notifications
 
-Orby 10.44 and Orby Live 0.3.0 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
+Orby 10.47 and Orby Live 0.3.1 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
 
 ## Existing connection
 
@@ -46,8 +46,14 @@ Disable phone access or revoke the phone to stop sharing. You can also turn noti
 
 ## Evidence and limits
 
-The earlier physical iPhone test verified pairing, task display over mobile data and a passkey-signed no-action denial independently checked against the Windows-pinned key. The new notification, five-minute handoff, typed-response and stop paths have automated browser/relay/native fixture checks. Real Home Screen push delivery and a live desktop question response still need the user's iPhone test after this update.
+The earlier physical iPhone test verified pairing, task display over mobile data and a passkey-signed no-action denial independently checked against the Windows-pinned key. The new notification, five-minute handoff, typed-response and stop paths have automated browser/relay/native fixture checks. Home Screen Lock Screen test notification delivery has now been confirmed on the physical iPhone. A live five-minute question handoff/response and real custom response/Stop still need the user's iPhone test.
 
 `scripts/Run-PhoneConnectionCheck.ps1` can repeat a harmless ten-minute passkey diagnostic. It never enters the real permission queue or grants access. The physical result is separate from a real native permission click.
 
 The native iPhone app and Live Activity extension previously compiled for simulator and unsigned device on [the cloud Mac](https://github.com/kevinenas/Orby/actions/runs/39993496758). Signing, native installation and native APNs/Live Activity delivery remain deferred under the free-version choice.
+
+
+Desktop request controls must remain accessible to Windows. For a handoff test, keep the relevant chat visible and Windows unlocked; lock only the phone. An unreadable, hidden or ambiguous desktop request cannot be answered remotely through this UI-based adapter. A brief accessibility redraw does not restart an unchanged question timer, but a missing request for more than ten seconds ends continuity. Changing the question, choices, app window or journal task/turn invalidates its prior review.
+
+
+While a supported question waits on the PC, the notch shows a five-minute countdown. The small closed notch also keeps that time visible. Unavailable phone/controls pause the handoff. The desktop card closes only once the relay acknowledges the current question. Premature project alerts are suppressed while a desktop review is waiting; the phone instead explains that the question is still waiting on the PC. An actual question notification is separate and opens its review. A native response marked stale is not a confirmed successful answer.

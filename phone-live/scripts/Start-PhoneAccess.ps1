@@ -2,7 +2,7 @@ param([int]$Port=4321,[string]$InstalledRoot='')
 $ErrorActionPreference='Stop';$root=Split-Path $PSScriptRoot -Parent
 $node=(Get-Command node.exe -ErrorAction Stop).Source;$tunnel=(Get-Command cloudflared.exe -ErrorAction Stop).Source
 if(-not $InstalledRoot){$candidates=@((Join-Path $env:USERPROFILE 'Documents/Codex/Orby'),(Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Codex/Orby'));$InstalledRoot=$candidates|Where-Object {Test-Path -LiteralPath (Join-Path $_ 'Phone-Link.cs')}|Select-Object -First 1;if(-not $InstalledRoot){throw 'The Orby installation was not found. Pass its folder with -InstalledRoot.'}} 
-$helper=Join-Path $InstalledRoot 'Phone-Link.cs';if(-not (Test-Path -LiteralPath $helper)){throw 'Install Orby 10.44 before starting phone access.'}
+$helper=Join-Path $InstalledRoot 'Phone-Link.cs';if(-not (Test-Path -LiteralPath $helper)){throw 'Install Orby 10.47 before starting phone access.'}
 if(-not (Test-Path -LiteralPath (Join-Path $root 'node_modules/express'))){throw 'Run npm.cmd ci --ignore-scripts inside phone-live once, then start again.'}
 $private=Join-Path $root '.desktop-data';[void][IO.Directory]::CreateDirectory($private)
 # Only this Windows account and SYSTEM can read local relay keys, logs and state.
@@ -31,5 +31,5 @@ try{
  $config=@{Enabled=$true;Approvals=$false;Origin=$origin;Token=$pc.token;Trusted=$trust}
  [OrbyPhoneClient]::Save($configPath,($config|ConvertTo-Json -Depth 5 -Compress))
  [pscustomobject]@{Origin=$origin;RelayPid=$relayProcess.Id;TunnelPid=$tunnelProcess.Id;RelayExe=$node;TunnelExe=$tunnel;MainScript=(Join-Path $root 'relay/main.mjs');Started=[datetime]::UtcNow.ToString('o')}|ConvertTo-Json|Set-Content -LiteralPath $statePath -Encoding UTF8
- Write-Output ('Phone relay ready: '+$origin);Write-Output 'Open Orby Settings > Phone access > Create invitation / QR code. Orby 10.44 reloads this connection automatically.';Write-Output 'Connect each phone separately and compare its fingerprint on both screens.';Write-Output 'Task sharing is enabled. Remote approvals remain off until you enable them in Phone access.';Write-Output 'This temporary address works away from home while this PC and both helpers stay running. It changes when restarted.'
+ Write-Output ('Phone relay ready: '+$origin);Write-Output 'Open Orby Settings > Phone access > Create invitation / QR code. Orby 10.47 reloads this connection automatically.';Write-Output 'Connect each phone separately and compare its fingerprint on both screens.';Write-Output 'Task sharing is enabled. Remote approvals remain off until you enable them in Phone access.';Write-Output 'This temporary address works away from home while this PC and both helpers stay running. It changes when restarted.'
 }catch{if($relayProcess){Stop-Process -Id $relayProcess.Id -ErrorAction SilentlyContinue};if($tunnelProcess){Stop-Process -Id $tunnelProcess.Id -ErrorAction SilentlyContinue};throw}finally{foreach($name in @('PORT','NODE_ENV','PUBLIC_ORIGIN','DATA_DIR')){Remove-Item ('Env:'+$name) -ErrorAction SilentlyContinue}}

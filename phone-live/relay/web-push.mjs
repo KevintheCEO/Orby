@@ -30,9 +30,10 @@ export class WebPushDelivery{
   if(!state.connected)return;
   for(const p of this.store.all('d-phone').filter(p=>p.sourceId===sourceId&&p.active&&p.mode==='web'&&p.pushSubscription)){
    const request=state.requests.find(r=>r.kind!=='stop');
+   if(!request&&link?.reviewWaiting)continue;
    if(p.pushSettings?.awayOnly!==false&&link?.presence?.away!==true&&!request?.handoff)continue;
    if(this.clock()-(p.foregroundAt||0)<8000)continue;
-   const working=state.tasks.filter(t=>t.state==='working'||t.state==='attention');
+   const working=state.tasks.filter(t=>t.state==='working');
    const kind=request?'request':working.length&&p.pushSettings?.activity!==false?'activity':null;if(!kind)continue;
    const key=request?'request:'+(this.store.get('d-request',request.id)?.nativeId||request.id)+':'+request.revision:'activity:'+working.map(t=>t.provider+':'+t.id).sort().join('|');
    if(p.lastPushKey===key||this.queues.get(p.id)?.key===key)continue;
@@ -44,7 +45,7 @@ export class WebPushDelivery{
     const fresh=this.store.get('d-phone',p.id),current=this.store.get('d-link',sourceId);
     if(!fresh?.active||!current||this.clock()-current.at>=15000||fresh.pushSettings?.awayOnly!==false&&current.presence?.away!==true&&!request?.handoff||this.clock()-(fresh.foregroundAt||0)<8000)return;
     if(kind==='request'){const r=this.store.get('d-request',request.id);if(!r||r.status!=='pending'||r.revision!==request.revision||current.requestId!==r.id)return;}
-    if(kind==='activity'&&!current.tasks.some(t=>t.state==='working'||t.state==='attention'))return;
+    if(kind==='activity'&&(current.reviewWaiting||!current.tasks.some(t=>t.state==='working')))return;
     this.store.put('d-phone',p.id,{...fresh,lastPushAttempt:{key,at:this.clock()}});
     const result=await this.deliver(fresh,payload),after=this.store.get('d-phone',p.id);
     if(after&&result.status==='accepted')this.store.put('d-phone',p.id,{...after,lastPushKey:key,...(kind==='activity'?{lastActivityPush:this.clock()}:{})});
