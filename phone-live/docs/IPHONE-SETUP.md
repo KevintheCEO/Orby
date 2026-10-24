@@ -1,6 +1,6 @@
 # Orby on your iPhone — free notifications
 
-Orby 10.47 and Orby Live 0.4.0 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
+Orby 10.47 and Orby Live 0.4.1 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
 
 ## Existing connection
 

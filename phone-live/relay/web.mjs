@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {digest,token,fail} from './security.mjs';
 import {fingerprint,decisionText} from './desktop.mjs';
 import {mountConnectionChecks} from './connection-check.mjs';
+import {mountPhoneTests} from './phone-test.mjs';
 import {mountWebPush} from './web-push.mjs';
 import {phoneSummary} from './phone-summary.mjs';
 import {decisionFields,validateDecision} from './decision.mjs';
@@ -18,6 +19,7 @@ export function mountPhoneWeb(app,{store,desktop,origin,clock=Date.now,webPush=n
  const phone=req=>{const p=desktop.mobile(req);fail(p.mode==='web',403,'Use the native phone client for this device');return p;};
  const topLevel=response=>{try{const raw=Buffer.from(response.response.clientDataJSON,'base64url');fail(raw.length<=4096,403,'Passkey client data is too large');const c=JSON.parse(raw.toString('utf8'));fail(c&&typeof c==='object'&&(c.crossOrigin===undefined||c.crossOrigin===false),403,'Open Orby directly in Safari');}catch{fail(false,403,'Invalid passkey client context');}};
  const connectionChecks=mountConnectionChecks(app,{store,desktop,origin,clock,wrap,phone,topLevel});
+ const phoneTests=mountPhoneTests(app,{store,desktop,origin,clock,wrap,phone,topLevel,delivery:webPush});
  mountWebPush(app,{store,desktop,delivery:webPush,wrap,phone,clock});
  const asset=fileURLToPath(new URL('../web/',import.meta.url));
  app.get(['/iphone','/iphone/'],(_req,res)=>res.redirect(302,'/iphone/home.html'));
@@ -41,7 +43,7 @@ export function mountPhoneWeb(app,{store,desktop,origin,clock=Date.now,webPush=n
   const secret=token(),p={id:randomUUID(),sourceId:registration.sourceId,name:registration.name,mode:'web',publicKey:raw.toString('base64'),hash:digest(secret),created:clock(),active:false,credential:{id:credential.id,publicKey:Buffer.from(credential.publicKey).toString('base64'),counter:credential.counter,transports:credential.transports||[]}};
   store.remove('d-web-reg',b.id);store.remove('d-invite',registration.inviteHash);store.put('d-phone',p.id,p);res.status(201).json({token:secret,deviceId:p.id,fingerprint:fingerprint(p.publicKey)});
  }));
- app.get('/web/state',wrap((req,res)=>{const p=desktop.mobile(req,false);fail(p.mode==='web',403,'Wrong phone client');const identity={fingerprint:fingerprint(p.publicKey)};if(!p.active){res.json({...identity,connected:false,active:false,tasks:[],requests:[],message:'Confirm the matching fingerprint in Orby on your PC'});return;}store.put('d-phone',p.id,{...p,foregroundAt:clock()});const state=desktop.snapshot(p.sourceId),link=store.get('d-link',p.sourceId);res.json({...state,...identity,summary:{...phoneSummary(state,link?.presence),reviewWaiting:state.connected&&link?.reviewWaiting===true},connectionChecks:connectionChecks(p.sourceId),active:true});}));
+ app.get('/web/state',wrap((req,res)=>{const p=desktop.mobile(req,false);fail(p.mode==='web',403,'Wrong phone client');const identity={fingerprint:fingerprint(p.publicKey)};if(!p.active){res.json({...identity,connected:false,active:false,tasks:[],requests:[],message:'Confirm the matching fingerprint in Orby on your PC'});return;}store.put('d-phone',p.id,{...p,foregroundAt:clock()});const state=desktop.snapshot(p.sourceId),link=store.get('d-link',p.sourceId);res.json({...state,...identity,summary:{...phoneSummary(state,link?.presence),reviewWaiting:state.connected&&link?.reviewWaiting===true},connectionChecks:connectionChecks(p.sourceId),phoneTests:phoneTests(p.sourceId),active:true});}));
  app.get('/web/request/:id',wrap((req,res)=>{const p=phone(req),state=desktop.snapshot(p.sourceId);let r=store.get('d-request',req.params.id);fail(r&&r.sourceId===p.sourceId,404,'Request not found');if(r.status==='expired'){const link=store.get('d-link',p.sourceId),next=link?.requestId&&store.get('d-request',link.requestId);if(next?.status==='pending'&&next.nativeId===r.nativeId&&next.revision===r.revision)r=next;}res.json({id:r.id,reviewText:r.reviewText,revision:r.revision,provider:r.provider,kind:r.kind||'permission',choices:r.choices||[],canReply:r.canReply||false,status:state.connected?r.status:'offline',expiresAt:Math.floor(r.expires/1000),credentialId:p.credential.id});}));
  app.post('/web/request/:id/decision',wrap(async(req,res)=>{
   const p=phone(req),b=z.object({...decisionFields,response:z.unknown()}).strict().parse(req.body);

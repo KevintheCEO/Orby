@@ -1,6 +1,6 @@
 # Orby phone access
 
-Orby 10.47 + Orby Live 0.4.0 provide free iPhone Home Screen notifications, a compact live project/status overview and signed responses to supported desktop requests. Follow [the iPhone guide](docs/IPHONE-SETUP.md). The approved dark/light glass interface reuses the original rendered Orby mascot and 81 public desktop motion clips; [appearance and motion guide](docs/PHONE-APPEARANCE.md).
+Orby 10.47 + Orby Live 0.4.1 provide free iPhone Home Screen notifications, a compact live project/status overview and signed responses to supported desktop requests. Follow [the iPhone guide](docs/IPHONE-SETUP.md). The approved dark/light glass interface reuses the original rendered Orby mascot and 81 public desktop motion clips; [appearance and motion guide](docs/PHONE-APPEARANCE.md).
 
 - A still-unanswered ChatGPT/Codex question hands off after five minutes, when a trusted notification-capable phone and the relay are ready. Otherwise it remains on the PC.
 - Tap a notification to open the exact current question. Choose an answer or, where the desktop form supports it, type/dictate a response. Sending requires an explicit tap and passkey confirmation.
@@ -25,3 +25,5 @@ The Dockerfile includes the web app and is prepared for a protected persistent r
 
 
 While a supported question waits on the PC, the notch shows a five-minute countdown. The small closed notch also keeps that time visible. Unavailable phone/controls pause the handoff. The desktop card closes only once the relay acknowledges the current question. Premature project alerts are suppressed while a desktop review is waiting; the phone instead explains that the question is still waiting on the PC. An actual question notification is separate and opens its review. A native response marked stale is not a confirmed successful answer.
+
+An explicitly requested [direct phone test poll](docs/DIRECT-PHONE-TEST.md) can bypass the normal five-minute wait for diagnostics only. Its choices record signed replies and cannot grant access or run actions.
