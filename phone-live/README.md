@@ -1,6 +1,6 @@
 # Orby phone access
 
-Orby 10.47 + Orby Live 0.3.1 provide free iPhone Home Screen notifications, a compact live project/status overview and signed responses to supported desktop requests. Follow [the iPhone guide](docs/IPHONE-SETUP.md).
+Orby 10.47 + Orby Live 0.4.0 provide free iPhone Home Screen notifications, a compact live project/status overview and signed responses to supported desktop requests. Follow [the iPhone guide](docs/IPHONE-SETUP.md). The approved dark/light glass interface reuses the original rendered Orby mascot and 81 public desktop motion clips; [appearance and motion guide](docs/PHONE-APPEARANCE.md).
 
 - A still-unanswered ChatGPT/Codex question hands off after five minutes, when a trusted notification-capable phone and the relay are ready. Otherwise it remains on the PC.
 - Tap a notification to open the exact current question. Choose an answer or, where the desktop form supports it, type/dictate a response. Sending requires an explicit tap and passkey confirmation.

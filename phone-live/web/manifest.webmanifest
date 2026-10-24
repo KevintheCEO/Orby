@@ -1,1 +1,1 @@
-{"name":"Orby for iPhone","short_name":"Orby","start_url":"/iphone/home.html","scope":"/iphone/","display":"standalone","background_color":"#08090b","theme_color":"#08090b","icons":[{"src":"/iphone/icon.png","sizes":"256x256","type":"image/png"}],"id":"/iphone/"}
+{"name":"Orby for iPhone","short_name":"Orby","start_url":"/iphone/home.html","scope":"/iphone/","display":"standalone","background_color":"#050506","theme_color":"#050506","icons":[{"src":"/iphone/icon.png","sizes":"256x256","type":"image/png"}],"id":"/iphone/"}

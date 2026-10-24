@@ -1,6 +1,6 @@
 # Orby on your iPhone — free notifications
 
-Orby 10.47 and Orby Live 0.3.1 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
+Orby 10.47 and Orby Live 0.4.0 use an iPhone Home Screen web app. No paid Apple membership or TestFlight is needed. The app shows short project/status cards and lets you review supported ChatGPT/Codex questions and permissions. Real iPhone notifications can appear on the Lock Screen and in Notification Center after you enable them. This is not an Apple Live Activity or Dynamic Island widget.
 
 ## Existing connection
 
@@ -57,3 +57,7 @@ Desktop request controls must remain accessible to Windows. For a handoff test, 
 
 
 While a supported question waits on the PC, the notch shows a five-minute countdown. The small closed notch also keeps that time visible. Unavailable phone/controls pause the handoff. The desktop card closes only once the relay acknowledges the current question. Premature project alerts are suppressed while a desktop review is waiting; the phone instead explains that the question is still waiting on the PC. An actual question notification is separate and opens its review. A native response marked stale is not a confirmed successful answer.
+
+## Glass appearance and animated companions
+
+Reload the existing Home Screen app to load the new interface without changing its pairing. **Settings → Appearance** offers Follow device, Dark and Light. Home expands each provider into its actual task details; Tasks can filter all three providers. The original rendered Orby mascot, native face geometry, desktop task colors and 81 public motion clips are reused. **Gentler motion** and iPhone Reduce Motion are respected. See [appearance and motion](PHONE-APPEARANCE.md) for the exact behavior and test limits.

@@ -1,12 +1,17 @@
-# Local validation · 18 October 2026
+# Validation · 24 October 2026
 
-- Node.js 24.21.0 on Windows.
-- `npm.cmd test`: **15 passed, 0 failed**. Local HTTP tests exercise independent source/phone clients, exact request retrieval, role isolation, single-use invites, request revision checks, expiry, cancellation, replay prevention, queued approvals, token revocation, encrypted storage and hook allow/deny/fallback contracts.
-- APNs sender test checks its ES256 signature locally using a generated test key and a mocked HTTP/2 connection. It verifies topic, priority and ActivityKit JSON. **No request is sent to Apple in this test.**
-- `npm.cmd audit --omit=dev --audit-level=moderate`: no known vulnerabilities reported at validation time.
-- Relay startup, private setup generation and demo status submission succeeded locally. The relay correctly reports that Apple push is not configured. Generated configurations keep phone permission answering disabled.
-- Node syntax checks passed for the relay entry point and hook adapter.
+Orby Live 0.4.0 phone glass UI; Windows Orby remains 10.47.
 
-**Not verified:** Swift compilation, macOS CI, code signing, a physical iPhone, Face ID/passcode behavior, Apple push acceptance/delivery, iOS background behavior, provider hook installation in a real Codex/Claude Code session or App Store/TestFlight distribution.
+- **48 automated tests passed, 0 failed, 0 skipped**, including the full relay, browser passkey, notification, handoff and independent Windows signature checks. Browser tests used the installed Chromium browser and a virtual authenticator.
+- The new UI fixture checks Dark, Light, live Follow device changes, appearance persistence without resetting pairing, original mascot textures and native eye paths, stable task colors and expanded cards, all task details/filtering, all 81 public motion previews, Reduce Motion, background pausing, inert task text and no horizontal overflow at 320/375/390/430/768 pixels.
+- The white rendered mascot body is copied byte for byte from the installed Windows Orby artwork. Four colored variants are exported using the desktop renderer. No water artwork or private settings are included.
+- The updated app keeps the existing pairing key, signed-decision flow and notification subscription. No Windows installer update is necessary for this web UI release.
+- Screenshots and fixture results are in the workspace `outputs/iphone-glass-ui/`. Their activity is synthetic preview data, not a record of the user's tasks.
 
-This package is development source, not a production-ready or signed iPhone release. Desktop Orby was not modified.
+## Physical and platform limits
+
+The earlier real iPhone tests passed pairing, task viewing over mobile data, Lock Screen notification delivery and the actual five-minute question handoff with a signed choice response independently verified by Windows. Those tests predate this UI release. The new glass rendering, appearance switches and motion smoothness have not yet been checked on the physical iPhone. WebKit is not installed in this Windows runtime. Real custom dictation and Stop still need physical-device checks.
+
+The native iOS simulator and unsigned device compilation passed in an earlier cloud Mac run. No signed native iPhone app, native background Live Activity or Apple push delivery was produced. The user chose the free Home Screen web app.
+
+Task viewing covers ChatGPT, Claude and Gemini; native answering applies only to the supported, accessible ChatGPT/Codex controls exposed by the PC bridge. The PC, relay and tunnel must remain awake and online. No live approval is executed by the automated synthetic tests.
