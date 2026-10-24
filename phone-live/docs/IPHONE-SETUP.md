@@ -46,7 +46,7 @@ Disable phone access or revoke the phone to stop sharing. You can also turn noti
 
 ## Evidence and limits
 
-The earlier physical iPhone test verified pairing, task display over mobile data and a passkey-signed no-action denial independently checked against the Windows-pinned key. The new notification, five-minute handoff, typed-response and stop paths have automated browser/relay/native fixture checks. Home Screen Lock Screen test notification delivery has now been confirmed on the physical iPhone. A live five-minute question handoff/response and real custom response/Stop still need the user's iPhone test.
+The earlier physical iPhone test verified pairing, task display over mobile data and a passkey-signed no-action denial independently checked against the Windows-pinned key. The new notification, five-minute handoff, typed-response and stop paths have automated browser/relay/native fixture checks. Home Screen Lock Screen test notification delivery has now been confirmed on the physical iPhone. The actual five-minute ChatGPT question handoff and signed choice response now passed on the physical iPhone, with independent Windows verification, native Answer sent and a resolved acknowledgement. Real custom dictation and Stop still need physical-device tests.
 
 `scripts/Run-PhoneConnectionCheck.ps1` can repeat a harmless ten-minute passkey diagnostic. It never enters the real permission queue or grants access. The physical result is separate from a real native permission click.
 
